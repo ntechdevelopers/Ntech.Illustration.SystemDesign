@@ -1,0 +1,3773 @@
+{
+  "id": "indexes",
+  "title": "Indexes",
+  "summary": "Why the same query can take two seconds or two milliseconds.",
+  "minutes": 12,
+  "level": "beginner",
+  "metrics": [
+    "p95",
+    "rows",
+    "writeCost",
+    "indexes"
+  ],
+  "legend": [
+    [
+      "slow",
+      "full table scan"
+    ],
+    "req",
+    "res",
+    "write"
+  ],
+  "goals": [
+    {
+      "text": "What a full table scan costs",
+      "step": 0
+    },
+    {
+      "text": "How a B-tree index finds a row",
+      "step": 3
+    },
+    {
+      "text": "What indexes cost on every write",
+      "step": 4
+    },
+    {
+      "text": "Composite indexes and column order",
+      "step": 5
+    },
+    {
+      "text": "When an index can’t help — and how to check",
+      "step": 6
+    }
+  ],
+  "steps": [
+    {
+      "short": "Slow query",
+      "chapter": "problem",
+      "title": "Finding one user takes two seconds",
+      "body": [
+        "Logging in looks up a user by email. With 50 million users, it takes over two seconds — and it gets slower every day.",
+        "With nothing to guide it, the database does a <span class=\"term\">full table scan</span>: it reads every page of the table, checking each row. Watch the amber request crawl along."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "Scans grow with the table. Fine at a thousand rows; painful at fifty million."
+      },
+      "metrics": {
+        "p95": 2300,
+        "rows": 50000000,
+        "writeCost": 1,
+        "indexes": 0
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "q": {
+            "type": "panel",
+            "x": 11.8,
+            "y": 6.6,
+            "z": 0,
+            "dx": 34,
+            "dy": -215,
+            "title": "The query",
+            "lines": [
+              "SELECT * FROM users",
+              "WHERE email = 'alice@example.com'",
+              "# 50,000,000 rows · no index"
+            ],
+            "icon": "search"
+          }
+        },
+        "links": {
+          "scan": {
+            "from": "app",
+            "to": null,
+            "pts": [
+              "app",
+              [
+                -13,
+                5.2
+              ],
+              [
+                11.6,
+                5.2
+              ]
+            ],
+            "heads": "none",
+            "label": "reads every page",
+            "labelAt": 0.62
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "scan"
+            ],
+            "kind": "slow",
+            "rate": 0.45,
+            "speed": 0.42
+          }
+        ]
+      }
+    },
+    {
+      "short": "Phone book",
+      "chapter": "insight",
+      "title": "How a phone book does it",
+      "body": [
+        "Nobody reads a phone book page by page. Because it’s <b>sorted</b>, you open the middle, see whether your name comes before or after, and throw away half the book. Repeat.",
+        "Halving 50 million entries takes only about 26 steps."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "An index is a sorted copy of one column, with a pointer back to each full row."
+      },
+      "metrics": {
+        "p95": 2300,
+        "rows": 50000000,
+        "writeCost": 1,
+        "indexes": 0
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "q": {
+            "type": "panel",
+            "x": 11.8,
+            "y": 6.6,
+            "z": 0,
+            "dx": 34,
+            "dy": -215,
+            "title": "Sorted → binary search",
+            "lines": [
+              "halve the range at every step",
+              "log₂(50,000,000) ≈ 26 steps",
+              "= 26 comparisons, not 50 million"
+            ],
+            "icon": "bulb"
+          }
+        },
+        "links": {
+          "scan": {
+            "from": "app",
+            "to": null,
+            "pts": [
+              "app",
+              [
+                -13,
+                5.2
+              ],
+              [
+                11.6,
+                5.2
+              ]
+            ],
+            "heads": "none",
+            "label": "reads every page",
+            "labelAt": 0.62
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "scan"
+            ],
+            "kind": "slow",
+            "rate": 0.45,
+            "speed": 0.42
+          }
+        ]
+      }
+    },
+    {
+      "short": "Add index",
+      "chapter": "solution",
+      "title": "Add an index",
+      "body": [
+        "<code>CREATE INDEX ON users (email)</code> builds a <span class=\"term\">B-tree</span>: a small tree of sorted keys. The root says which branch covers your email, the branch says which page holds the row.",
+        "Three hops instead of fifty million rows: the lookup now takes about 2 ms."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Primary keys get an index automatically. Columns you search, join or sort on usually need one too."
+      },
+      "changes": [
+        "+ B-tree index on email",
+        "~ Rows read 50,000,000 → 1",
+        "~ p95 latency 2.3 s → 2 ms"
+      ],
+      "metrics": {
+        "p95": 2,
+        "rows": 1,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON email · B-TREE"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–Z"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–H"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "I–Q"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "R–Z"
+            ]
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "ar",
+                  "rb1",
+                  "b1p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb2",
+                  "b2p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3",
+                  "b3p"
+                ]
+              }
+            ],
+            "rate": 2.2,
+            "bounce": true
+          }
+        ]
+      }
+    },
+    {
+      "short": "Why shallow",
+      "chapter": "technique",
+      "title": "Why B-trees stay shallow",
+      "body": [
+        "Each tree node is one disk page holding hundreds of keys, so every level multiplies the reach by hundreds.",
+        "Three or four levels cover billions of rows — and the top levels are used so often they stay in memory."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "That’s why an indexed lookup costs about the same at a million rows as at a billion."
+      },
+      "metrics": {
+        "p95": 2,
+        "rows": 1,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON email · B-TREE"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–Z"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–H"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "I–Q"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "R–Z"
+            ]
+          },
+          "q": {
+            "type": "panel",
+            "x": 11.8,
+            "y": 6.6,
+            "z": 0,
+            "dx": 34,
+            "dy": -215,
+            "title": "Fan-out per level",
+            "lines": [
+              "each node ≈ 500 keys",
+              "2 levels: 500² = 250,000 rows",
+              "3 levels: 500³ = 125,000,000 rows",
+              "= ~4 page reads to find any row"
+            ],
+            "icon": "layers"
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "ar",
+                  "rb1",
+                  "b1p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb2",
+                  "b2p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3",
+                  "b3p"
+                ]
+              }
+            ],
+            "rate": 2.2,
+            "bounce": true
+          }
+        ]
+      }
+    },
+    {
+      "short": "Writes pay",
+      "chapter": "tradeoff",
+      "title": "Every index makes writes slower",
+      "body": [
+        "When a user signs up, the row goes into the table <em>and</em> into every index on it, keeping each one sorted. Watch the writes (dark squares) land in both places.",
+        "Indexes also take disk and memory. Index what you query, not everything."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "A table with 6 indexes does 7 writes per insert. Unused indexes are pure cost."
+      },
+      "changes": [
+        "+ Inserts update table and index",
+        "~ Writes per insert 1 → 2"
+      ],
+      "metrics": {
+        "p95": 2,
+        "rows": 1,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON email · B-TREE"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–Z"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–H"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "I–Q"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "R–Z"
+            ]
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          },
+          "ins": {
+            "from": "app",
+            "to": "p11",
+            "pts": [
+              "app",
+              [
+                -13,
+                5.2
+              ],
+              [
+                "p11",
+                5.2
+              ],
+              "p11"
+            ],
+            "heads": "end",
+            "label": "INSERT row",
+            "labelAt": 0.7
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "ar",
+                  "rb1",
+                  "b1p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb2",
+                  "b2p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3",
+                  "b3p"
+                ]
+              }
+            ],
+            "rate": 1.4,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ins"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3",
+                  "b3p"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Column order",
+      "chapter": "technique",
+      "title": "Composite indexes: order matters",
+      "body": [
+        "An index can cover several columns, like <code>(country, city)</code>. It’s sorted by country first, then by city within each country — like a phone book sorted by last name, then first name.",
+        "It speeds up queries on <code>country</code>, or <code>country</code> + <code>city</code>. A query on <code>city</code> alone can’t use it and falls back to a scan."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Put the column you always filter on first. Indexes help from the left."
+      },
+      "changes": [
+        "~ Index on (country, city)",
+        "+ City-only query → full scan"
+      ],
+      "metrics": {
+        "p95": 2,
+        "rows": 1,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON (country, city)"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "country"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "DE · city"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "NL · city"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "US · city"
+            ]
+          },
+          "q": {
+            "type": "panel",
+            "x": 11.8,
+            "y": 6.6,
+            "z": 0,
+            "dx": 34,
+            "dy": -215,
+            "title": "Can it use the index?",
+            "lines": [
+              "country = 'NL' AND city = 'Delft'  ✓",
+              "country = 'NL'                     ✓",
+              "! city = 'Delft'  ✗ full scan"
+            ],
+            "icon": "search"
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          },
+          "scan": {
+            "from": "app",
+            "to": null,
+            "pts": [
+              "app",
+              [
+                -13,
+                5.2
+              ],
+              [
+                11.6,
+                5.2
+              ]
+            ],
+            "heads": "none",
+            "label": "reads every page",
+            "labelAt": 0.62
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "ar",
+                  "rb1",
+                  "b1p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb2",
+                  "b2p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3",
+                  "b3p"
+                ]
+              }
+            ],
+            "rate": 1.8,
+            "bounce": true
+          },
+          {
+            "route": [
+              "scan"
+            ],
+            "kind": "slow",
+            "rate": 0.45,
+            "speed": 0.42
+          }
+        ]
+      }
+    },
+    {
+      "short": "Wildcards",
+      "chapter": "problem",
+      "title": "Case: queries the index can’t help",
+      "body": [
+        "Marketing asks for every Gmail user: <code>WHERE email LIKE '%@gmail.com'</code>. The index is sorted by the <em>start</em> of each email, and this pattern says nothing about the start — so it’s a full scan again.",
+        "The same happens with functions: <code>WHERE LOWER(email) = …</code> can’t use a plain index on <code>email</code>, because the index stores the original values."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Fixes: an expression index on LOWER(email), a stored domain column with its own index, or a search engine for free-text matching."
+      },
+      "changes": [
+        "+ Leading-wildcard query",
+        "~ Index ignored → full scan"
+      ],
+      "metrics": {
+        "p95": 2300,
+        "rows": 50000000,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON email · B-TREE"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–Z"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–H"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "I–Q"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "R–Z"
+            ]
+          },
+          "q": {
+            "type": "panel",
+            "x": 11.8,
+            "y": 6.6,
+            "z": 0,
+            "dx": 34,
+            "dy": -215,
+            "title": "Can it use the index?",
+            "lines": [
+              "email = 'alice@…'          ✓ seek",
+              "email LIKE 'alice%'          ✓ range",
+              "! email LIKE '%@gmail.com'  ✗ scan",
+              "! LOWER(email) = '…'        ✗ scan"
+            ],
+            "icon": "search"
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          },
+          "scan": {
+            "from": "app",
+            "to": null,
+            "pts": [
+              "app",
+              [
+                -13,
+                5.2
+              ],
+              [
+                11.6,
+                5.2
+              ]
+            ],
+            "heads": "none",
+            "label": "reads every page",
+            "labelAt": 0.62
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "scan"
+            ],
+            "kind": "slow",
+            "rate": 0.45,
+            "speed": 0.42
+          }
+        ]
+      }
+    },
+    {
+      "short": "Selectivity",
+      "chapter": "problem",
+      "title": "Case: the index nobody uses",
+      "body": [
+        "Support wants every user in one country: <code>WHERE country = 'US'</code>. You add an index on <code>country</code> — and the database ignores it, because 40% of all rows match.",
+        "Following the index would mean hopping to a different table page for each of 20 million rows — slower than simply reading the table front to back. An index pays off when it is <span class=\"term\">selective</span>: when it narrows the search to a small fraction of the rows."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "If you only ever query a small slice — <code>WHERE status = 'pending'</code> — use a <b>partial index</b> that contains just those rows: tiny, fast and cheap to maintain."
+      },
+      "changes": [
+        "+ Index on country",
+        "~ 40% of rows match → full scan anyway",
+        "~ Writes per insert 2 → 3, for nothing"
+      ],
+      "metrics": {
+        "p95": 2600,
+        "rows": 50000000,
+        "writeCost": 3,
+        "indexes": 2
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON country · NOT SELECTIVE"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "all"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "AR – FR"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "GB – MX"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "NG – ZA"
+            ]
+          },
+          "q": {
+            "type": "panel",
+            "x": 11.8,
+            "y": 6.6,
+            "z": 0,
+            "dx": 34,
+            "dy": -215,
+            "title": "How many rows match?",
+            "lines": [
+              "email = 'alice@…'      1 row    ✓ index",
+              "= status = 'pending'    0.1%     ✓ partial index",
+              "! country = 'US'        40%      ✗ scan is cheaper",
+              "# an index helps when it rules out most rows"
+            ],
+            "icon": "search"
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          },
+          "scan": {
+            "from": "app",
+            "to": null,
+            "pts": [
+              "app",
+              [
+                -13,
+                5.2
+              ],
+              [
+                11.6,
+                5.2
+              ]
+            ],
+            "heads": "none",
+            "label": "reads every page",
+            "labelAt": 0.62
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "scan"
+            ],
+            "kind": "slow",
+            "rate": 0.45,
+            "speed": 0.42
+          }
+        ]
+      }
+    },
+    {
+      "short": "EXPLAIN",
+      "chapter": "technique",
+      "title": "Ask the database: EXPLAIN",
+      "body": [
+        "You don’t have to guess. Prefix a query with <code>EXPLAIN</code> and the database shows its plan: which index it will use, and how many rows it expects to read.",
+        "“Index Scan” on a few rows is good news. “Seq Scan” on a big table is the red flag. <code>EXPLAIN ANALYZE</code> runs the query and reports real timings."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Most databases also keep a slow-query log. Start there: it lists the queries actually costing you time."
+      },
+      "changes": [
+        "+ Query plan shown",
+        "− Unused country index dropped"
+      ],
+      "metrics": {
+        "p95": 2,
+        "rows": 1,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON email · B-TREE"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–Z"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–H"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "I–Q"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "R–Z"
+            ]
+          },
+          "q": {
+            "type": "panel",
+            "x": 11.8,
+            "y": 6.6,
+            "z": 0,
+            "dx": 34,
+            "dy": -215,
+            "title": "EXPLAIN",
+            "lines": [
+              "SELECT * FROM users WHERE email = 'a@…'",
+              "= Index Scan using users_email_idx",
+              "#   rows=1  time=0.04 ms",
+              "SELECT * FROM users WHERE email LIKE '%@g…'",
+              "! Seq Scan on users  rows=50,000,000"
+            ],
+            "icon": "search"
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "ar",
+                  "rb1",
+                  "b1p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb2",
+                  "b2p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3",
+                  "b3p"
+                ]
+              }
+            ],
+            "rate": 2.2,
+            "bounce": true
+          }
+        ]
+      }
+    },
+    {
+      "short": "Covering",
+      "chapter": "technique",
+      "title": "Covering indexes: skip the table",
+      "body": [
+        "The login page only needs the user’s name and id. If the index stores those columns too, the database can answer from the index alone — it never visits the table pages.",
+        "This is a <span class=\"term\">covering index</span>. Watch lookups stop at the branches instead of reaching the table."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "In PostgreSQL: CREATE INDEX ON users (email) INCLUDE (id, name). It makes the index bigger, so cover only hot queries."
+      },
+      "changes": [
+        "~ Index includes id and name",
+        "− Table lookups for this query"
+      ],
+      "metrics": {
+        "p95": 1,
+        "rows": 1,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON email INCLUDE (id, name)"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–Z"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–H + name"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "I–Q + name"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "R–Z + name"
+            ]
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "ar",
+                  "rb1"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb2"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3"
+                ]
+              }
+            ],
+            "rate": 2.4,
+            "bounce": true
+          }
+        ]
+      }
+    },
+    {
+      "short": "Recap",
+      "chapter": "recap",
+      "title": "Recap",
+      "body": [
+        "<ul class=\"takeaways\">\n          <li>Without an index, a lookup <b>scans every row</b>.</li>\n          <li>A <b>B-tree</b> index finds any row in a handful of page reads.</li>\n          <li>Every index adds work to <b>every write</b> — index what you query.</li>\n          <li>Composite indexes work <b>from the leftmost column</b>.</li>\n          <li>Leading wildcards, functions and <b>low selectivity</b> defeat indexes — check with <b>EXPLAIN</b>.</li>\n        </ul>"
+      ],
+      "callout": {
+        "kind": "next",
+        "text": "Next up: <b>Storage Engines</b> — what the database actually does with a write, and why some are built for reads and others for writes."
+      },
+      "metrics": {
+        "p95": 2,
+        "rows": 1,
+        "writeCost": 2,
+        "indexes": 1
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": -13,
+            "y": -14,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ]
+          },
+          "tbl": {
+            "type": "zone",
+            "x0": -11.8,
+            "x1": 11.8,
+            "y0": 6.6,
+            "y1": 9.4,
+            "label": "USERS TABLE · 50M ROWS"
+          },
+          "p0": {
+            "type": "block",
+            "x": -10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p1": {
+            "type": "block",
+            "x": -8.549999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p2": {
+            "type": "block",
+            "x": -6.6499999999999995,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p3": {
+            "type": "block",
+            "x": -4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p4": {
+            "type": "block",
+            "x": -2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p5": {
+            "type": "block",
+            "x": -0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p6": {
+            "type": "block",
+            "x": 0.9499999999999993,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p7": {
+            "type": "block",
+            "x": 2.8499999999999996,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p8": {
+            "type": "block",
+            "x": 4.75,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p9": {
+            "type": "block",
+            "x": 6.649999999999999,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p10": {
+            "type": "block",
+            "x": 8.55,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "p11": {
+            "type": "block",
+            "x": 10.45,
+            "y": 8,
+            "color": "purple",
+            "glyph": "",
+            "s": 1.55,
+            "h": 10,
+            "radius": 3,
+            "label": []
+          },
+          "idx": {
+            "type": "zone",
+            "x0": -9.6,
+            "x1": 9.6,
+            "y0": -10.6,
+            "y1": 0.4,
+            "label": "INDEX ON email · B-TREE"
+          },
+          "root": {
+            "type": "block",
+            "x": 0,
+            "y": -8,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–Z"
+            ]
+          },
+          "b1": {
+            "type": "block",
+            "x": -7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "A–H"
+            ]
+          },
+          "b2": {
+            "type": "block",
+            "x": 0,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "I–Q"
+            ]
+          },
+          "b3": {
+            "type": "block",
+            "x": 7,
+            "y": -2,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3,
+            "h": 30,
+            "label": [
+              "R–Z"
+            ]
+          }
+        },
+        "links": {
+          "ar": {
+            "from": "app",
+            "to": "root",
+            "pts": [
+              "app",
+              [
+                "root",
+                "app"
+              ],
+              "root"
+            ],
+            "heads": "both"
+          },
+          "rb1": {
+            "from": "root",
+            "to": "b1",
+            "pts": [
+              "root",
+              [
+                "b1",
+                "root"
+              ],
+              "b1"
+            ],
+            "heads": "both"
+          },
+          "rb2": {
+            "from": "root",
+            "to": "b2",
+            "pts": [
+              "root",
+              "b2"
+            ],
+            "heads": "both"
+          },
+          "rb3": {
+            "from": "root",
+            "to": "b3",
+            "pts": [
+              "root",
+              [
+                "b3",
+                "root"
+              ],
+              "b3"
+            ],
+            "heads": "both"
+          },
+          "b1p": {
+            "from": "b1",
+            "to": "p2",
+            "pts": [
+              "b1",
+              [
+                "p2",
+                "b1"
+              ],
+              "p2"
+            ],
+            "heads": "both"
+          },
+          "b2p": {
+            "from": "b2",
+            "to": "p6",
+            "pts": [
+              "b2",
+              [
+                "p6",
+                "b2"
+              ],
+              "p6"
+            ],
+            "heads": "both"
+          },
+          "b3p": {
+            "from": "b3",
+            "to": "p9",
+            "pts": [
+              "b3",
+              [
+                "p9",
+                "b3"
+              ],
+              "p9"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "ar",
+                  "rb1",
+                  "b1p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb2",
+                  "b2p"
+                ]
+              },
+              {
+                "path": [
+                  "ar",
+                  "rb3",
+                  "b3p"
+                ]
+              }
+            ],
+            "rate": 2.2,
+            "bounce": true
+          }
+        ]
+      }
+    }
+  ]
+}

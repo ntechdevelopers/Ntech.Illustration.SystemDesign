@@ -1,0 +1,1789 @@
+{
+  "id": "consistent-hashing",
+  "title": "Consistent Hashing",
+  "summary": "Add or remove servers and move only a sliver of the data.",
+  "minutes": 10,
+  "level": "intermediate",
+  "metrics": [
+    "nodes",
+    "moved",
+    "maxShare"
+  ],
+  "legend": [
+    "req",
+    [
+      "write",
+      "moving data / copies"
+    ]
+  ],
+  "goals": [
+    {
+      "text": "Why hash % N reshuffles everything",
+      "step": 0
+    },
+    {
+      "text": "Keys belong to the next server clockwise",
+      "step": 2
+    },
+    {
+      "text": "Adding or removing a server moves one arc",
+      "step": 4
+    },
+    {
+      "text": "Virtual nodes even out the load",
+      "step": 6
+    },
+    {
+      "text": "Replicas on the ring, and cache clusters",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "The problem",
+      "chapter": "problem",
+      "title": "hash % N breaks when N changes",
+      "body": [
+        "Last lesson ended badly: with <code>shard = hash(key) % N</code>, going from 4 to 5 shards changes the answer for about 80% of keys. Nearly all the data moves.",
+        "We want a scheme where adding a server only moves the keys that server should take over — roughly 1/N of them."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "The trick is to stop tying placement to N at all."
+      },
+      "metrics": {
+        "nodes": 4,
+        "moved": "80%",
+        "maxShare": 25
+      },
+      "scene": {
+        "entities": {
+          "a": {
+            "type": "db",
+            "x": -10.5,
+            "y": -4,
+            "r": 1.6,
+            "h": 36,
+            "tags": [
+              {
+                "text": "A"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -3.5,
+            "y": -4,
+            "r": 1.6,
+            "h": 36,
+            "tags": [
+              {
+                "text": "B"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 3.5,
+            "y": -4,
+            "r": 1.6,
+            "h": 36,
+            "tags": [
+              {
+                "text": "C"
+              }
+            ]
+          },
+          "d": {
+            "type": "db",
+            "x": 10.5,
+            "y": -4,
+            "r": 1.6,
+            "h": 36,
+            "tags": [
+              {
+                "text": "D"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "dx": -470,
+            "dy": -250,
+            "title": "% 4 → % 5",
+            "lines": [
+              "hash(k) % 4  →  hash(k) % 5",
+              "! ~80% of keys land somewhere new",
+              "# we want ~1/5 to move"
+            ],
+            "icon": "replay"
+          }
+        },
+        "links": {},
+        "flows": []
+      }
+    },
+    {
+      "short": "The ring",
+      "chapter": "technique",
+      "title": "Bend the hash space into a ring",
+      "body": [
+        "Hash values run from 0 to 2³². Join the ends and you get a <span class=\"term\">ring</span>.",
+        "Now hash each <b>server’s</b> name too, and place it on the ring at that point. The servers glide to wherever their hashes put them — not evenly spaced, just wherever the hash lands."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Nothing here depends on how many servers there are. That’s the whole point."
+      },
+      "changes": [
+        "+ Hash ring",
+        "~ Servers placed at hash(server name)"
+      ],
+      "metrics": {
+        "nodes": 4,
+        "moved": "—",
+        "maxShare": "—"
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 280,
+                "color": "green"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              }
+            ],
+            "keys": [],
+            "label": "hash ring · 0 → 2³²"
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "c": {
+            "type": "block",
+            "x": 1.7364817766692997,
+            "y": -9.848077530122081,
+            "color": "green",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "C"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          }
+        },
+        "links": {},
+        "flows": []
+      }
+    },
+    {
+      "short": "Keys",
+      "chapter": "technique",
+      "title": "Each key goes clockwise",
+      "body": [
+        "Hash each <b>key</b> onto the ring too. A key belongs to the <b>first server clockwise</b> from it. The coloured arcs show which server owns which stretch; each dot is a key, coloured by its owner.",
+        "Watch a lookup travel clockwise from a key to its server."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "To find a key’s server: hash the key, walk clockwise, stop at the first server. Clients do this with a sorted list and a binary search."
+      },
+      "changes": [
+        "+ Keys on the ring",
+        "~ Each key owned by the next server clockwise"
+      ],
+      "metrics": {
+        "nodes": 4,
+        "moved": "—",
+        "maxShare": 28
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 280,
+                "color": "green"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²"
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "c": {
+            "type": "block",
+            "x": 1.7364817766692997,
+            "y": -9.848077530122081,
+            "color": "green",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "C"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          }
+        },
+        "links": {
+          "k1": {
+            "from": "ring",
+            "to": "a",
+            "pts": [
+              [
+                -9.396926207859083,
+                3.420201433256689
+              ],
+              [
+                -9.063077870366499,
+                4.2261826174069945
+              ],
+              [
+                -8.660254037844387,
+                4.999999999999999
+              ],
+              [
+                -8.191520442889916,
+                5.735764363510464
+              ],
+              [
+                -7.660444431189779,
+                6.427876096865395
+              ],
+              [
+                -7.071067811865475,
+                7.0710678118654755
+              ],
+              [
+                -6.427876096865393,
+                7.66044443118978
+              ],
+              [
+                -5.735764363510459,
+                8.19152044288992
+              ],
+              [
+                -4.999999999999998,
+                8.660254037844387
+              ],
+              [
+                -4.226182617406994,
+                9.0630778703665
+              ],
+              [
+                -3.420201433256687,
+                9.396926207859085
+              ],
+              [
+                -2.5881904510252083,
+                9.659258262890683
+              ],
+              [
+                -1.736481776669303,
+                9.84807753012208
+              ]
+            ],
+            "heads": "end",
+            "label": "key @ 160°",
+            "labelAt": 0.25
+          },
+          "k2": {
+            "from": "ring",
+            "to": "b",
+            "pts": [
+              [
+                5.877852522924732,
+                8.090169943749475
+              ],
+              [
+                6.560590289905073,
+                7.54709580222772
+              ],
+              [
+                7.193398003386512,
+                6.9465837045899725
+              ],
+              [
+                7.771459614569709,
+                6.293203910498374
+              ],
+              [
+                8.290375725550415,
+                5.591929034707469
+              ],
+              [
+                8.746197071393958,
+                4.8480962024633705
+              ],
+              [
+                9.135454576426008,
+                4.0673664307580015
+              ],
+              [
+                9.455185755993169,
+                3.2556815445715666
+              ],
+              [
+                9.702957262759965,
+                2.4192189559966772
+              ],
+              [
+                9.84807753012208,
+                1.7364817766693033
+              ]
+            ],
+            "heads": "end",
+            "label": "key @ 54°",
+            "labelAt": 0.25
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "k1"
+                ]
+              },
+              {
+                "path": [
+                  "k2"
+                ]
+              }
+            ],
+            "rate": 1.3
+          }
+        ]
+      }
+    },
+    {
+      "short": "Add a server",
+      "chapter": "solution",
+      "title": "Adding a server moves one arc",
+      "body": [
+        "Server E joins at its hash position, between C and B. It takes over only the keys in the arc just counter-clockwise of it — the ones that used to walk past it to C.",
+        "Every other key stays exactly where it was. The pulsing keys are the only ones that move."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Adding the 5th server moves about 1/5 of the keys — the minimum possible."
+      },
+      "changes": [
+        "+ Server E",
+        "~ 3 of 18 keys move (to E)",
+        "~ Everything else stays put"
+      ],
+      "metrics": {
+        "nodes": 5,
+        "moved": "17%",
+        "maxShare": 28
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 280,
+                "color": "green"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              },
+              {
+                "a": 308,
+                "color": "yellow"
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²",
+            "moved": [
+              322,
+              336,
+              350
+            ]
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "c": {
+            "type": "block",
+            "x": 1.7364817766692997,
+            "y": -9.848077530122081,
+            "color": "green",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "C"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          },
+          "e": {
+            "type": "block",
+            "x": 6.156614753256585,
+            "y": -7.880107536067218,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "E"
+            ]
+          }
+        },
+        "links": {},
+        "flows": []
+      }
+    },
+    {
+      "short": "Remove one",
+      "chapter": "technique",
+      "title": "Removing a server moves one arc too",
+      "body": [
+        "Back to four servers — and now C dies. Its keys simply continue clockwise to the next server, D. Nobody else is affected.",
+        "Compare that with <code>% N</code>, where losing one server would reshuffle almost everything."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "Amazon’s Dynamo, Cassandra and many caches and CDNs place data this way. Close cousins — rendezvous and jump hashing — get the same result without a ring."
+      },
+      "changes": [
+        "− Server C",
+        "~ C’s 4 keys move to D"
+      ],
+      "metrics": {
+        "nodes": 3,
+        "moved": "22%",
+        "maxShare": 44
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²",
+            "moved": [
+              296,
+              322,
+              336,
+              350
+            ]
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          },
+          "c": {
+            "type": "block",
+            "x": 1.7364817766692997,
+            "y": -9.848077530122081,
+            "color": "green",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "C"
+            ],
+            "dead": 1,
+            "heat": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "DOWN",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          }
+        },
+        "links": {},
+        "flows": []
+      }
+    },
+    {
+      "short": "Uneven",
+      "chapter": "problem",
+      "title": "Random positions, uneven arcs",
+      "body": [
+        "Servers land wherever their hash puts them, so arcs are uneven. With C gone, D now owns a huge stretch of the ring — and gets far more keys and traffic than A or B.",
+        "With only a few servers, luck alone can leave one doing twice the work of another."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "Uneven arcs mean uneven load — exactly the hot spot sharding was meant to avoid."
+      },
+      "changes": [
+        "~ D owns 44% of the keys"
+      ],
+      "metrics": {
+        "nodes": 3,
+        "moved": "—",
+        "maxShare": 44
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²"
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ],
+            "heat": 0.8,
+            "tags": [
+              {
+                "text": "44% of keys",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          }
+        },
+        "links": {},
+        "flows": []
+      }
+    },
+    {
+      "short": "Virtual nodes",
+      "chapter": "solution",
+      "title": "Virtual nodes even it out",
+      "body": [
+        "Give each server several positions on the ring — <span class=\"term\">virtual nodes</span> (the diamonds) — by hashing <code>A#1</code>, <code>A#2</code>, … Each server now owns many small arcs instead of one big one.",
+        "Shares even out, and when a server leaves, its keys spread across <em>all</em> the others instead of dumping on one neighbour."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Real systems use anywhere from 16 to a few hundred virtual nodes per server. Stronger servers can get more of them."
+      },
+      "changes": [
+        "+ 3 positions per server",
+        "~ Biggest share 44% → 33%"
+      ],
+      "metrics": {
+        "nodes": 3,
+        "moved": "—",
+        "maxShare": 33
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              },
+              {
+                "a": 75,
+                "color": "blue",
+                "mark": true
+              },
+              {
+                "a": 315,
+                "color": "orange",
+                "mark": true
+              },
+              {
+                "a": 225,
+                "color": "purple",
+                "mark": true
+              },
+              {
+                "a": 180,
+                "color": "blue",
+                "mark": true
+              },
+              {
+                "a": 30,
+                "color": "orange",
+                "mark": true
+              },
+              {
+                "a": 340,
+                "color": "purple",
+                "mark": true
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²"
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          }
+        },
+        "links": {},
+        "flows": []
+      }
+    },
+    {
+      "short": "Replicas",
+      "chapter": "technique",
+      "title": "Copies on the next servers clockwise",
+      "body": [
+        "One copy per key isn’t enough — a dead server would lose its data. So each key is stored on the first <b>three</b> distinct servers clockwise: its owner plus the next two.",
+        "Follow the key at 160°: copy 1 on A, copy 2 on B, copy 3 on C. If A dies, B and C still have it, and the next server along takes over A’s share."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Dynamo calls this the preference list. With virtual nodes, skip positions owned by a server you already picked."
+      },
+      "changes": [
+        "+ Each key stored on 3 servers",
+        "~ Survives any single failure"
+      ],
+      "metrics": {
+        "nodes": 4,
+        "moved": "—",
+        "maxShare": 28
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 280,
+                "color": "green"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²"
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ],
+            "tags": [
+              {
+                "text": "copy 1",
+                "tone": "violet"
+              }
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ],
+            "tags": [
+              {
+                "text": "copy 2",
+                "tone": "violet"
+              }
+            ]
+          },
+          "c": {
+            "type": "block",
+            "x": 1.7364817766692997,
+            "y": -9.848077530122081,
+            "color": "green",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "C"
+            ],
+            "tags": [
+              {
+                "text": "copy 3",
+                "tone": "violet"
+              }
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          }
+        },
+        "links": {
+          "k1": {
+            "from": "ring",
+            "to": "a",
+            "pts": [
+              [
+                -9.396926207859083,
+                3.420201433256689
+              ],
+              [
+                -9.063077870366499,
+                4.2261826174069945
+              ],
+              [
+                -8.660254037844387,
+                4.999999999999999
+              ],
+              [
+                -8.191520442889916,
+                5.735764363510464
+              ],
+              [
+                -7.660444431189779,
+                6.427876096865395
+              ],
+              [
+                -7.071067811865475,
+                7.0710678118654755
+              ],
+              [
+                -6.427876096865393,
+                7.66044443118978
+              ],
+              [
+                -5.735764363510459,
+                8.19152044288992
+              ],
+              [
+                -4.999999999999998,
+                8.660254037844387
+              ],
+              [
+                -4.226182617406994,
+                9.0630778703665
+              ],
+              [
+                -3.420201433256687,
+                9.396926207859085
+              ],
+              [
+                -2.5881904510252083,
+                9.659258262890683
+              ],
+              [
+                -1.736481776669303,
+                9.84807753012208
+              ]
+            ],
+            "heads": "end",
+            "label": "key @ 160°",
+            "labelAt": 0.25
+          },
+          "k2": {
+            "from": "ring",
+            "to": "b",
+            "pts": [
+              [
+                -1.736481776669303,
+                9.84807753012208
+              ],
+              [
+                -0.8715574274765824,
+                9.961946980917455
+              ],
+              [
+                6.123233995736766e-16,
+                10
+              ],
+              [
+                0.8715574274765814,
+                9.961946980917455
+              ],
+              [
+                1.7364817766693041,
+                9.84807753012208
+              ],
+              [
+                2.5881904510252074,
+                9.659258262890683
+              ],
+              [
+                3.4202014332566884,
+                9.396926207859083
+              ],
+              [
+                4.2261826174069945,
+                9.063077870366499
+              ],
+              [
+                5.000000000000001,
+                8.660254037844386
+              ],
+              [
+                5.7357643635104605,
+                8.191520442889917
+              ],
+              [
+                6.427876096865393,
+                7.66044443118978
+              ],
+              [
+                7.0710678118654755,
+                7.071067811865475
+              ],
+              [
+                7.66044443118978,
+                6.4278760968653925
+              ],
+              [
+                8.191520442889917,
+                5.7357643635104605
+              ],
+              [
+                8.660254037844387,
+                4.999999999999999
+              ],
+              [
+                9.063077870366499,
+                4.2261826174069945
+              ],
+              [
+                9.396926207859085,
+                3.420201433256687
+              ],
+              [
+                9.659258262890683,
+                2.5881904510252074
+              ],
+              [
+                9.84807753012208,
+                1.7364817766693033
+              ]
+            ],
+            "heads": "end",
+            "label": "copy 2",
+            "labelAt": 0.5
+          },
+          "k3": {
+            "from": "ring",
+            "to": "c",
+            "pts": [
+              [
+                9.84807753012208,
+                1.7364817766693033
+              ],
+              [
+                9.961946980917455,
+                0.8715574274765816
+              ],
+              [
+                10,
+                0
+              ],
+              [
+                9.961946980917455,
+                -0.8715574274765816
+              ],
+              [
+                9.84807753012208,
+                -1.7364817766693033
+              ],
+              [
+                9.659258262890683,
+                -2.5881904510252074
+              ],
+              [
+                9.396926207859085,
+                -3.420201433256687
+              ],
+              [
+                9.063077870366499,
+                -4.2261826174069945
+              ],
+              [
+                8.660254037844387,
+                -4.999999999999999
+              ],
+              [
+                8.191520442889917,
+                -5.7357643635104605
+              ],
+              [
+                7.66044443118978,
+                -6.4278760968653925
+              ],
+              [
+                7.0710678118654755,
+                -7.071067811865475
+              ],
+              [
+                6.427876096865393,
+                -7.66044443118978
+              ],
+              [
+                5.7357643635104605,
+                -8.191520442889917
+              ],
+              [
+                5.000000000000001,
+                -8.660254037844386
+              ],
+              [
+                4.2261826174069945,
+                -9.063077870366499
+              ],
+              [
+                3.4202014332566884,
+                -9.396926207859083
+              ],
+              [
+                2.5881904510252074,
+                -9.659258262890683
+              ],
+              [
+                1.7364817766693041,
+                -9.84807753012208
+              ]
+            ],
+            "heads": "end",
+            "label": "copy 3",
+            "labelAt": 0.5
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "k1",
+              "k2",
+              "k3"
+            ],
+            "rate": 0.6,
+            "kind": "write"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Cache fleet",
+      "chapter": "insight",
+      "title": "Case: growing a cache cluster",
+      "body": [
+        "A fleet of Memcached servers sits in front of a database, and clients pick a server with <code>hash(key) % N</code>. Adding a fifth server remaps ~80% of keys — they all miss at once, and the database is flattened by the stampede.",
+        "With consistent hashing, adding the fifth server moves only ~20% of keys. The cache stays mostly warm and the database barely notices."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "This is where consistent hashing started: spreading web caches across machines that come and go."
+      },
+      "changes": [
+        "+ Fifth cache server",
+        "~ Cache misses after the change: 80% → 20%"
+      ],
+      "metrics": {
+        "nodes": 5,
+        "moved": "20%",
+        "maxShare": 28
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 280,
+                "color": "green"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              },
+              {
+                "a": 308,
+                "color": "yellow"
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²",
+            "moved": [
+              322,
+              336,
+              350
+            ]
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "c": {
+            "type": "block",
+            "x": 1.7364817766692997,
+            "y": -9.848077530122081,
+            "color": "green",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "C"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          },
+          "e": {
+            "type": "block",
+            "x": 6.156614753256585,
+            "y": -7.880107536067218,
+            "color": "yellow",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "E"
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "dx": -470,
+            "dy": -250,
+            "title": "Misses after adding a server",
+            "lines": [],
+            "icon": "zap",
+            "chart": "bars",
+            "bars": [
+              {
+                "label": "hash % N",
+                "to": 0.8,
+                "tone": "red",
+                "note": "80%"
+              },
+              {
+                "label": "consistent",
+                "to": 0.2,
+                "tone": "green",
+                "note": "20%"
+              }
+            ]
+          }
+        },
+        "links": {},
+        "flows": []
+      }
+    },
+    {
+      "short": "Recap",
+      "chapter": "recap",
+      "title": "Recap",
+      "body": [
+        "<ul class=\"takeaways\">\n          <li>Put servers and keys on a <b>hash ring</b>; a key belongs to the <b>next server clockwise</b>.</li>\n          <li>Adding or removing a server moves only <b>one arc</b> — about 1/N of keys.</li>\n          <li><b>Virtual nodes</b> even out shares and spread the load when servers leave.</li>\n          <li>Store each key on the <b>next N servers</b> clockwise for redundancy.</li>\n        </ul>"
+      ],
+      "callout": {
+        "kind": "next",
+        "text": "Next up: <b>Unique IDs at Scale</b> — giving every row a name once there is no single database to count for you."
+      },
+      "metrics": {
+        "nodes": 3,
+        "moved": "—",
+        "maxShare": 33
+      },
+      "scene": {
+        "entities": {
+          "ring": {
+            "type": "ring",
+            "x": 0,
+            "y": 0,
+            "r": 10,
+            "nodes": [
+              {
+                "a": 100,
+                "color": "blue"
+              },
+              {
+                "a": 10,
+                "color": "orange"
+              },
+              {
+                "a": 200,
+                "color": "purple"
+              },
+              {
+                "a": 75,
+                "color": "blue",
+                "mark": true
+              },
+              {
+                "a": 315,
+                "color": "orange",
+                "mark": true
+              },
+              {
+                "a": 225,
+                "color": "purple",
+                "mark": true
+              },
+              {
+                "a": 180,
+                "color": "blue",
+                "mark": true
+              },
+              {
+                "a": 30,
+                "color": "orange",
+                "mark": true
+              },
+              {
+                "a": 340,
+                "color": "purple",
+                "mark": true
+              }
+            ],
+            "keys": [
+              26,
+              40,
+              54,
+              68,
+              82,
+              118,
+              132,
+              146,
+              160,
+              174,
+              216,
+              230,
+              244,
+              258,
+              296,
+              322,
+              336,
+              350
+            ],
+            "label": "hash ring · 0 → 2³²"
+          },
+          "a": {
+            "type": "block",
+            "x": -1.736481776669303,
+            "y": 9.84807753012208,
+            "color": "blue",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "A"
+            ]
+          },
+          "b": {
+            "type": "block",
+            "x": 9.84807753012208,
+            "y": 1.7364817766693033,
+            "color": "orange",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "B"
+            ]
+          },
+          "d": {
+            "type": "block",
+            "x": -9.396926207859085,
+            "y": -3.4202014332566866,
+            "color": "purple",
+            "glyph": "",
+            "s": 3.2,
+            "h": 38,
+            "label": [
+              "D"
+            ]
+          }
+        },
+        "links": {
+          "k1": {
+            "from": "ring",
+            "to": "a",
+            "pts": [
+              [
+                -9.396926207859083,
+                3.420201433256689
+              ],
+              [
+                -9.063077870366499,
+                4.2261826174069945
+              ],
+              [
+                -8.660254037844387,
+                4.999999999999999
+              ],
+              [
+                -8.191520442889916,
+                5.735764363510464
+              ],
+              [
+                -7.660444431189779,
+                6.427876096865395
+              ],
+              [
+                -7.071067811865475,
+                7.0710678118654755
+              ],
+              [
+                -6.427876096865393,
+                7.66044443118978
+              ],
+              [
+                -5.735764363510459,
+                8.19152044288992
+              ],
+              [
+                -4.999999999999998,
+                8.660254037844387
+              ],
+              [
+                -4.226182617406994,
+                9.0630778703665
+              ],
+              [
+                -3.420201433256687,
+                9.396926207859085
+              ],
+              [
+                -2.5881904510252083,
+                9.659258262890683
+              ],
+              [
+                -1.736481776669303,
+                9.84807753012208
+              ]
+            ],
+            "heads": "end",
+            "label": "key @ 160°",
+            "labelAt": 0.25
+          },
+          "k2": {
+            "from": "ring",
+            "to": "b",
+            "pts": [
+              [
+                8.98794046299167,
+                4.383711467890774
+              ],
+              [
+                9.335804264972017,
+                3.5836794954530027
+              ],
+              [
+                9.612616959383189,
+                2.7563735581699915
+              ],
+              [
+                9.81627183447664,
+                1.908089953765448
+              ],
+              [
+                9.84807753012208,
+                1.7364817766693033
+              ]
+            ],
+            "heads": "end",
+            "label": "key @ 26°",
+            "labelAt": 0.25
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "k1"
+                ]
+              },
+              {
+                "path": [
+                  "k2"
+                ]
+              }
+            ],
+            "rate": 1.2
+          }
+        ]
+      }
+    }
+  ]
+}

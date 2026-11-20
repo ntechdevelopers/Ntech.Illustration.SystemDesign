@@ -1,0 +1,2289 @@
+{
+  "id": "consensus",
+  "title": "Consensus & Leader Election",
+  "summary": "How a group of servers agrees on one leader and one history — even when some of them can’t be reached.",
+  "minutes": 14,
+  "level": "advanced",
+  "metrics": [
+    "leaders",
+    "term",
+    "writes",
+    "canLose"
+  ],
+  "legend": [
+    [
+      "write",
+      "write / log entry"
+    ],
+    [
+      "msg",
+      "vote request"
+    ],
+    [
+      "ping",
+      "heartbeat"
+    ],
+    [
+      "poison",
+      "stale leader’s write"
+    ],
+    "fail"
+  ],
+  "goals": [
+    {
+      "text": "Why naive failover causes split brain",
+      "step": 1
+    },
+    {
+      "text": "Majority quorums — and why they overlap",
+      "step": 2
+    },
+    {
+      "text": "Terms, votes and elections (Raft)",
+      "step": 3
+    },
+    {
+      "text": "When a write counts as committed",
+      "step": 4
+    },
+    {
+      "text": "How many nodes a cluster needs",
+      "step": 6
+    },
+    {
+      "text": "Fencing tokens for paused leaders",
+      "step": 8
+    }
+  ],
+  "steps": [
+    {
+      "short": "One leader",
+      "chapter": "setup",
+      "title": "One leader, two followers",
+      "body": [
+        "From <em>Replication</em>: one <span class=\"term\">leader</span> takes every write and copies it to its followers. If the leader dies, a follower is promoted and carries on.",
+        "That sentence hides one of the hardest questions in distributed systems: <b>who decides</b> the leader is dead — and what happens if they’re wrong?"
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "From the outside, a crashed server, a slow server and a server behind a broken cable all look exactly the same: silence."
+      },
+      "metrics": {
+        "leaders": 1,
+        "term": "—",
+        "writes": "ok",
+        "canLose": "?"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "leader",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          }
+        },
+        "links": {
+          "w1a": {
+            "from": "app1",
+            "to": "a",
+            "pts": [
+              "app1",
+              "a"
+            ],
+            "heads": "both"
+          },
+          "ab": {
+            "from": "a",
+            "to": "b",
+            "pts": [
+              "a",
+              [
+                "b",
+                "a"
+              ],
+              "b"
+            ],
+            "heads": "end",
+            "label": "replication",
+            "labelAt": 0.3
+          },
+          "ac": {
+            "from": "a",
+            "to": "c",
+            "pts": [
+              "a",
+              [
+                "c",
+                "a"
+              ],
+              "c"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1a"
+            ],
+            "kind": "write",
+            "rate": 0.8,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ab"
+                ]
+              },
+              {
+                "path": [
+                  "ac"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.8
+          }
+        ]
+      }
+    },
+    {
+      "short": "Split brain",
+      "chapter": "problem",
+      "title": "Two leaders at once",
+      "body": [
+        "A network fault cuts A off from B and C. A is alive and still serving App Server 1 — but B hears nothing, assumes the leader is dead, and promotes itself.",
+        "Now two leaders accept writes. Through A, seat 7 is sold to Ana; through B, the same seat is sold to Ben. Two histories that can never be merged cleanly: <span class=\"term\">split brain</span>."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "A timeout can tell you a server is unreachable. It can never tell you the server is dead."
+      },
+      "changes": [
+        "− Network between A and the others is cut",
+        "+ B promotes itself",
+        "− Two leaders, two different histories"
+      ],
+      "metrics": {
+        "leaders": 2,
+        "term": "—",
+        "writes": "diverging",
+        "canLose": "?"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "app2": {
+            "type": "block",
+            "x": -22,
+            "y": 7,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 2"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "leader · seat 7 → Ana",
+                "tone": "red",
+                "icon": "flag"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "leader · seat 7 → Ben",
+                "tone": "red",
+                "icon": "flag"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          }
+        },
+        "links": {
+          "w1a": {
+            "from": "app1",
+            "to": "a",
+            "pts": [
+              "app1",
+              "a"
+            ],
+            "heads": "both"
+          },
+          "w2b": {
+            "from": "app2",
+            "to": "b",
+            "pts": [
+              "app2",
+              "b"
+            ],
+            "heads": "both"
+          },
+          "xab": {
+            "from": "a",
+            "to": "b",
+            "pts": [
+              "a",
+              [
+                "b",
+                "a"
+              ],
+              "b"
+            ],
+            "heads": "none",
+            "style": "cut",
+            "label": "✕ cut off",
+            "labelTone": "red",
+            "labelAt": 0.3
+          },
+          "xac": {
+            "from": "a",
+            "to": "c",
+            "pts": [
+              "a",
+              [
+                "c",
+                "a"
+              ],
+              "c"
+            ],
+            "heads": "none",
+            "style": "cut"
+          },
+          "bc": {
+            "from": "b",
+            "to": "c",
+            "pts": [
+              "b",
+              "c"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1a"
+            ],
+            "kind": "write",
+            "rate": 0.8,
+            "bounce": true
+          },
+          {
+            "route": [
+              "w2b"
+            ],
+            "kind": "write",
+            "rate": 0.8,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "bc"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.8
+          }
+        ]
+      }
+    },
+    {
+      "short": "Majority",
+      "chapter": "solution",
+      "title": "The rule: nothing counts without a majority",
+      "body": [
+        "The fix is one rule. A leader is only elected — and a write only confirmed — when <b>more than half</b> of all nodes agree. With three nodes, that’s two.",
+        "Cut off, A can reach only itself: 1 of 3. It can’t confirm anything, so App Server 1’s writes wait and time out. B and C are 2 of 3: they may elect a leader and carry on. Any two majorities share at least one node, so two leaders can never both win."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "This is CAP in practice: the minority side gives up availability so that the data stays consistent."
+      },
+      "changes": [
+        "+ Rule: every decision needs 2 of 3",
+        "~ A alone → can’t confirm writes",
+        "~ B + C → a valid majority"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 2,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "app2": {
+            "type": "block",
+            "x": -22,
+            "y": 7,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 2"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "1 of 3 · can’t commit",
+                "tone": "amber",
+                "icon": "lock"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "leader · term 2",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": -10,
+            "y": 7,
+            "z": 0,
+            "dx": 190,
+            "dy": -125,
+            "title": "Majority (quorum)",
+            "lines": [
+              "3 nodes → 2 must agree",
+              "5 nodes → 3 must agree",
+              "= two majorities always overlap",
+              "# so only one side can ever decide"
+            ],
+            "icon": "scale"
+          }
+        },
+        "links": {
+          "w1a": {
+            "from": "app1",
+            "to": "a",
+            "pts": [
+              "app1",
+              "a"
+            ],
+            "heads": "both",
+            "fail": 1
+          },
+          "w2b": {
+            "from": "app2",
+            "to": "b",
+            "pts": [
+              "app2",
+              "b"
+            ],
+            "heads": "both"
+          },
+          "xab": {
+            "from": "a",
+            "to": "b",
+            "pts": [
+              "a",
+              [
+                "b",
+                "a"
+              ],
+              "b"
+            ],
+            "heads": "none",
+            "style": "cut",
+            "label": "✕ cut off",
+            "labelTone": "red",
+            "labelAt": 0.3
+          },
+          "xac": {
+            "from": "a",
+            "to": "c",
+            "pts": [
+              "a",
+              [
+                "c",
+                "a"
+              ],
+              "c"
+            ],
+            "heads": "none",
+            "style": "cut"
+          },
+          "bc": {
+            "from": "b",
+            "to": "c",
+            "pts": [
+              "b",
+              "c"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1a"
+            ],
+            "kind": "write",
+            "rate": 0.8,
+            "bounce": true
+          },
+          {
+            "route": [
+              "w2b"
+            ],
+            "kind": "write",
+            "rate": 0.8,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "bc"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.8
+          }
+        ]
+      }
+    },
+    {
+      "short": "Election",
+      "chapter": "technique",
+      "title": "How a leader gets elected",
+      "body": [
+        "This is the <span class=\"term\">Raft</span> algorithm. A leader sends regular heartbeats. Every follower runs a timer of <em>random</em> length; if it runs out with no heartbeat, that follower becomes a <b>candidate</b>.",
+        "B’s timer fires first. It starts <span class=\"term\">term</span> 2, votes for itself and asks the others. A node gives one vote per term, and only to a candidate whose log is at least as complete as its own. C says yes — 2 of 3 — so B leads term 2."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Random timers mean two nodes rarely stand at once. If the vote does split, nobody wins, the timers restart, and the next term settles it — usually within a second."
+      },
+      "changes": [
+        "+ B: no heartbeat → candidate for term 2",
+        "+ C votes for B",
+        "~ B wins 2 of 3 and starts sending heartbeats"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 2,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "app2": {
+            "type": "block",
+            "x": -22,
+            "y": 7,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 2"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "still on term 1",
+                "tone": "amber",
+                "icon": "clock"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "leader · term 2",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "voted for B",
+                "tone": "green",
+                "icon": "check"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": -10,
+            "y": 7,
+            "z": 0,
+            "dx": 190,
+            "dy": -125,
+            "title": "Election · term 2",
+            "lines": [
+              "B: timer fires — no heartbeat",
+              "B: term 1 → 2, votes for itself",
+              "B → C: “vote for me?”",
+              "= C: yes → 2 of 3 → B leads",
+              "# one vote per node per term"
+            ],
+            "icon": "flag"
+          }
+        },
+        "links": {
+          "w1a": {
+            "from": "app1",
+            "to": "a",
+            "pts": [
+              "app1",
+              "a"
+            ],
+            "heads": "both",
+            "fail": 1
+          },
+          "w2b": {
+            "from": "app2",
+            "to": "b",
+            "pts": [
+              "app2",
+              "b"
+            ],
+            "heads": "both"
+          },
+          "xab": {
+            "from": "a",
+            "to": "b",
+            "pts": [
+              "a",
+              [
+                "b",
+                "a"
+              ],
+              "b"
+            ],
+            "heads": "none",
+            "style": "cut",
+            "label": "✕ cut off",
+            "labelTone": "red",
+            "labelAt": 0.3
+          },
+          "xac": {
+            "from": "a",
+            "to": "c",
+            "pts": [
+              "a",
+              [
+                "c",
+                "a"
+              ],
+              "c"
+            ],
+            "heads": "none",
+            "style": "cut"
+          },
+          "bc": {
+            "from": "b",
+            "to": "c",
+            "pts": [
+              "b",
+              "c"
+            ],
+            "heads": "both",
+            "label": "vote for me? · term 2"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1a"
+            ],
+            "kind": "write",
+            "rate": 0.5,
+            "bounce": true
+          },
+          {
+            "route": [
+              "bc"
+            ],
+            "kind": "msg",
+            "rate": 0.7,
+            "bounce": true
+          },
+          {
+            "route": [
+              "bc"
+            ],
+            "kind": "ping",
+            "rate": 0.9
+          }
+        ]
+      }
+    },
+    {
+      "short": "Commit",
+      "chapter": "technique",
+      "title": "A write is committed by a majority",
+      "body": [
+        "Writes follow the same rule. App Server 2 sends <code>seat 7 → Ben</code> to the leader. B appends it to its <span class=\"term\">log</span> and sends it to the followers.",
+        "As soon as a majority has stored the entry — B and C — it is <b>committed</b>. Only then does B apply it and answer “saved”. A committed entry survives any failure that leaves a majority standing."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "Every node applies the same log entries in the same order, so every node ends up in the same state. That’s a <b>replicated state machine</b> — the idea underneath all of this."
+      },
+      "changes": [
+        "+ B appends entry 4 to its log",
+        "+ C stores it → 2 of 3",
+        "~ Committed → App Server 2 hears “saved”"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 2,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "app2": {
+            "type": "block",
+            "x": -22,
+            "y": 7,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 2"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "log 1 2 3 · 4′ Ana, unconfirmed",
+                "tone": "amber",
+                "icon": "listOrdered"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "leader · term 2",
+                "tone": "green",
+                "icon": "flag"
+              },
+              {
+                "text": "log 1 2 3 · 4 Ben ✓",
+                "tone": "green",
+                "icon": "listOrdered"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "log 1 2 3 · 4 Ben ✓",
+                "tone": "green",
+                "icon": "listOrdered"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": -10,
+            "y": 7,
+            "z": 0,
+            "dx": 190,
+            "dy": -125,
+            "title": "Commit rule",
+            "lines": [
+              "1  leader appends the entry",
+              "2  sends it to every follower",
+              "3  a majority has stored it",
+              "= committed → reply “saved”"
+            ],
+            "icon": "listOrdered"
+          }
+        },
+        "links": {
+          "w1a": {
+            "from": "app1",
+            "to": "a",
+            "pts": [
+              "app1",
+              "a"
+            ],
+            "heads": "both",
+            "fail": 1
+          },
+          "w2b": {
+            "from": "app2",
+            "to": "b",
+            "pts": [
+              "app2",
+              "b"
+            ],
+            "heads": "both"
+          },
+          "xab": {
+            "from": "a",
+            "to": "b",
+            "pts": [
+              "a",
+              [
+                "b",
+                "a"
+              ],
+              "b"
+            ],
+            "heads": "none",
+            "style": "cut",
+            "label": "✕ cut off",
+            "labelTone": "red",
+            "labelAt": 0.3
+          },
+          "xac": {
+            "from": "a",
+            "to": "c",
+            "pts": [
+              "a",
+              [
+                "c",
+                "a"
+              ],
+              "c"
+            ],
+            "heads": "none",
+            "style": "cut"
+          },
+          "bc": {
+            "from": "b",
+            "to": "c",
+            "pts": [
+              "b",
+              "c"
+            ],
+            "heads": "both",
+            "label": "append entry 4"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1a"
+            ],
+            "kind": "write",
+            "rate": 0.5,
+            "bounce": true
+          },
+          {
+            "route": [
+              "w2b",
+              "bc"
+            ],
+            "kind": "write",
+            "rate": 0.7,
+            "bounce": true
+          }
+        ]
+      }
+    },
+    {
+      "short": "Heal",
+      "chapter": "solution",
+      "title": "The old leader steps down",
+      "body": [
+        "The network heals. A — still believing it leads term 1 — receives a heartbeat from B stamped <b>term 2</b>. A higher term always wins: A becomes a follower at once.",
+        "A’s log holds one entry that never reached a majority: Ana’s booking, which App Server 1 was never told had succeeded. A discards it and copies B’s log instead. All three nodes are identical again, and nothing that was confirmed has been lost."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Terms are a logical clock. Nobody compares wall-clock times — only “whose term number is higher?”"
+      },
+      "changes": [
+        "+ Network restored",
+        "~ A sees term 2 → steps down",
+        "− A’s unconfirmed entry discarded",
+        "~ A copies the log from B · apps follow the leader"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 2,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "app2": {
+            "type": "block",
+            "x": -22,
+            "y": 7,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 2"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "follower · term 2 · caught up",
+                "tone": "green",
+                "icon": "check"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "leader · term 2",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          }
+        },
+        "links": {
+          "w1b": {
+            "from": "app1",
+            "to": "b",
+            "pts": [
+              "app1",
+              [
+                "b-1",
+                "app1"
+              ],
+              "b-1"
+            ],
+            "heads": "both"
+          },
+          "w2b": {
+            "from": "app2",
+            "to": "b",
+            "pts": [
+              "app2",
+              "b"
+            ],
+            "heads": "both"
+          },
+          "ba": {
+            "from": "b",
+            "to": "a",
+            "pts": [
+              "b",
+              [
+                "b",
+                "a"
+              ],
+              "a"
+            ],
+            "heads": "end",
+            "label": "heartbeat · term 2",
+            "labelAt": 0.3
+          },
+          "bc": {
+            "from": "b",
+            "to": "c",
+            "pts": [
+              "b",
+              "c"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1b"
+            ],
+            "kind": "write",
+            "rate": 0.6,
+            "bounce": true
+          },
+          {
+            "route": [
+              "w2b"
+            ],
+            "kind": "write",
+            "rate": 0.6,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ba"
+                ]
+              },
+              {
+                "path": [
+                  "bc"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.9
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ba"
+                ]
+              },
+              {
+                "path": [
+                  "bc"
+                ]
+              }
+            ],
+            "kind": "ping",
+            "rate": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "short": "How many",
+      "chapter": "insight",
+      "title": "How many nodes?",
+      "body": [
+        "A cluster of <b>N</b> nodes needs ⌊N/2⌋ + 1 votes, so it keeps working with ⌊(N − 1)/2⌋ of them down. Three nodes survive one failure; five survive two.",
+        "A fourth node is a trap: the majority becomes 3, so you still survive only one failure — with one more machine that can fail. Use odd sizes, and put each node in a different zone so one outage can’t take a majority with it."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Three or five is typical. Every write waits for more acknowledgements as the cluster grows, so bigger clusters get slower, not safer."
+      },
+      "changes": [
+        "+ One node per availability zone"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 2,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "app2": {
+            "type": "block",
+            "x": -22,
+            "y": 7,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 2"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "zone 1",
+                "icon": "building"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "leader · term 2",
+                "tone": "green",
+                "icon": "flag"
+              },
+              {
+                "text": "zone 2",
+                "icon": "building"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "zone 3",
+                "icon": "building"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": -10,
+            "y": 7,
+            "z": 0,
+            "dx": 190,
+            "dy": -125,
+            "title": "Nodes → majority → can lose",
+            "lines": [
+              "3  →  2  →  1",
+              "! 4  →  3  →  1   no gain",
+              "5  →  3  →  2",
+              "7  →  4  →  3"
+            ],
+            "icon": "scale"
+          }
+        },
+        "links": {
+          "w1b": {
+            "from": "app1",
+            "to": "b",
+            "pts": [
+              "app1",
+              [
+                "b-1",
+                "app1"
+              ],
+              "b-1"
+            ],
+            "heads": "both"
+          },
+          "w2b": {
+            "from": "app2",
+            "to": "b",
+            "pts": [
+              "app2",
+              "b"
+            ],
+            "heads": "both"
+          },
+          "ba": {
+            "from": "b",
+            "to": "a",
+            "pts": [
+              "b",
+              [
+                "b",
+                "a"
+              ],
+              "a"
+            ],
+            "heads": "end"
+          },
+          "bc": {
+            "from": "b",
+            "to": "c",
+            "pts": [
+              "b",
+              "c"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1b"
+            ],
+            "kind": "write",
+            "rate": 0.6,
+            "bounce": true
+          },
+          {
+            "route": [
+              "w2b"
+            ],
+            "kind": "write",
+            "rate": 0.6,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ba"
+                ]
+              },
+              {
+                "path": [
+                  "bc"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.9
+          }
+        ]
+      }
+    },
+    {
+      "short": "Zombie",
+      "chapter": "problem",
+      "title": "Case: the leader that paused",
+      "body": [
+        "Leader B freezes for twenty seconds — a long garbage-collection pause, or its virtual machine being moved. A and C hear no heartbeats, elect C for term 3, and move on.",
+        "Then B wakes up. As far as it can tell no time has passed, and it is still the leader. Before the next message corrects it, it finishes what it was doing: writing a file to shared storage — straight over the new leader’s work."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "A node cannot know it was paused. “I checked that I was the leader a moment ago” is never proof that you still are."
+      },
+      "changes": [
+        "− B freezes for 20 s",
+        "+ A and C elect C · term 3",
+        "− B wakes up and writes as if it still led"
+      ],
+      "metrics": {
+        "leaders": "1 + a zombie",
+        "term": 3,
+        "writes": "diverging",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "awake · thinks it leads term 2",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ],
+            "heat": 0.5
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "leader · term 3",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          },
+          "store": {
+            "type": "db",
+            "x": 0,
+            "y": 19,
+            "r": 1.8,
+            "glyph": "file",
+            "color": "store",
+            "label": "shared storage",
+            "tags": [
+              {
+                "text": "report.csv · overwritten by B",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          }
+        },
+        "links": {
+          "w1c": {
+            "from": "app1",
+            "to": "c",
+            "pts": [
+              "app1",
+              [
+                "c+1",
+                "app1"
+              ],
+              "c+1"
+            ],
+            "heads": "both"
+          },
+          "ca": {
+            "from": "c",
+            "to": "a",
+            "pts": [
+              "c",
+              [
+                "c",
+                "a"
+              ],
+              "a"
+            ],
+            "heads": "end"
+          },
+          "cb": {
+            "from": "c",
+            "to": "b",
+            "pts": [
+              "c",
+              "b"
+            ],
+            "heads": "end"
+          },
+          "sb": {
+            "from": "b",
+            "to": "store",
+            "pts": [
+              "b",
+              [
+                "b",
+                "store"
+              ],
+              "store"
+            ],
+            "heads": "end",
+            "label": "write (stale)",
+            "labelTone": "red",
+            "labelAt": 0.62
+          },
+          "sc": {
+            "from": "c",
+            "to": "store",
+            "pts": [
+              "c",
+              [
+                "c",
+                "store"
+              ],
+              "store"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1c"
+            ],
+            "kind": "write",
+            "rate": 0.6,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ca"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.7
+          },
+          {
+            "route": [
+              "sc"
+            ],
+            "kind": "write",
+            "rate": 0.5
+          },
+          {
+            "route": [
+              "sb"
+            ],
+            "kind": "poison",
+            "rate": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "short": "Fencing",
+      "chapter": "solution",
+      "title": "Fencing tokens",
+      "body": [
+        "The fix doesn’t depend on B noticing anything. Every request a leader sends carries its <b>term number</b> as a <span class=\"term\">fencing token</span>, and the storage remembers the highest token it has seen.",
+        "C has already written with token 3. When B’s write arrives carrying token 2, the storage refuses it. The stale leader is fenced off by the resource itself."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "The same goes for distributed locks: the lock service must hand out an increasing number with each lock, and the protected resource must check it. A lock that only says “it’s yours” is not safe."
+      },
+      "changes": [
+        "+ Every write carries the leader’s term",
+        "+ Storage rejects tokens older than the newest it has seen",
+        "~ B’s write refused: 2 < 3"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 3,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "refused → steps down",
+                "tone": "amber",
+                "icon": "undo"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "leader · term 3",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          },
+          "store": {
+            "type": "db",
+            "x": 0,
+            "y": 19,
+            "r": 1.8,
+            "glyph": "file",
+            "color": "store",
+            "label": "shared storage",
+            "tags": [
+              {
+                "text": "highest token seen: 3",
+                "tone": "green",
+                "icon": "shield"
+              }
+            ]
+          }
+        },
+        "links": {
+          "w1c": {
+            "from": "app1",
+            "to": "c",
+            "pts": [
+              "app1",
+              [
+                "c+1",
+                "app1"
+              ],
+              "c+1"
+            ],
+            "heads": "both"
+          },
+          "ca": {
+            "from": "c",
+            "to": "a",
+            "pts": [
+              "c",
+              [
+                "c",
+                "a"
+              ],
+              "a"
+            ],
+            "heads": "end"
+          },
+          "cb": {
+            "from": "c",
+            "to": "b",
+            "pts": [
+              "c",
+              "b"
+            ],
+            "heads": "end"
+          },
+          "sb": {
+            "from": "b",
+            "to": "store",
+            "pts": [
+              "b",
+              [
+                "b",
+                "store"
+              ],
+              "store"
+            ],
+            "heads": "end",
+            "label": "token 2 ✕",
+            "labelTone": "red",
+            "labelAt": 0.62,
+            "fail": 1
+          },
+          "sc": {
+            "from": "c",
+            "to": "store",
+            "pts": [
+              "c",
+              [
+                "c",
+                "store"
+              ],
+              "store"
+            ],
+            "heads": "end",
+            "label": "token 3 ✓",
+            "labelAt": 0.4
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1c"
+            ],
+            "kind": "write",
+            "rate": 0.6,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ca"
+                ]
+              },
+              {
+                "path": [
+                  "cb"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.7
+          },
+          {
+            "route": [
+              "sc"
+            ],
+            "kind": "write",
+            "rate": 0.5
+          },
+          {
+            "route": [
+              "sb"
+            ],
+            "kind": "poison",
+            "rate": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "short": "The price",
+      "chapter": "tradeoff",
+      "title": "What consensus costs",
+      "body": [
+        "Every write waits for a round trip to a majority. Inside one data center that’s a millisecond or two; with nodes in different regions it’s 50–150 ms on <em>every</em> write.",
+        "All writes pass through one leader, so throughput is capped by a single machine. And when no majority can be reached, the cluster accepts no writes at all — on purpose."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "Consensus buys correctness with latency and availability. Spend it on the small, critical decisions — not on every like and page view."
+      },
+      "changes": [
+        "~ Each write: + 1 majority round trip",
+        "~ An election pauses writes for about a second"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 3,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "leader · term 3",
+                "tone": "green",
+                "icon": "flag"
+              },
+              {
+                "text": "waits for 1 more ack",
+                "icon": "hourglass"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": -10,
+            "y": 7,
+            "z": 0,
+            "dx": 190,
+            "dy": -125,
+            "title": "The bill",
+            "lines": [
+              "every write: + 1 majority round trip",
+              "one leader → one machine’s throughput",
+              "! no majority → no writes",
+              "# an election pauses writes ≈ 1 s"
+            ],
+            "icon": "dollar"
+          }
+        },
+        "links": {
+          "w1c": {
+            "from": "app1",
+            "to": "c",
+            "pts": [
+              "app1",
+              [
+                "c+1",
+                "app1"
+              ],
+              "c+1"
+            ],
+            "heads": "both"
+          },
+          "ca": {
+            "from": "c",
+            "to": "a",
+            "pts": [
+              "c",
+              [
+                "c",
+                "a"
+              ],
+              "a"
+            ],
+            "heads": "end"
+          },
+          "cb": {
+            "from": "c",
+            "to": "b",
+            "pts": [
+              "c",
+              "b"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1c"
+            ],
+            "kind": "write",
+            "rate": 0.7,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ca"
+                ]
+              },
+              {
+                "path": [
+                  "cb"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.7,
+            "bounce": true
+          }
+        ]
+      }
+    },
+    {
+      "short": "In practice",
+      "chapter": "insight",
+      "title": "You use it far more than you write it",
+      "body": [
+        "Almost nobody implements Raft or Paxos themselves. You run a small consensus cluster — <b>etcd</b>, <b>ZooKeeper</b> or <b>Consul</b> — and keep only the critical facts in it: who the leader is, what the configuration says, who holds which lock.",
+        "Everything else leans on it. Kubernetes keeps all its cluster state in etcd. Kafka elects its controllers with Raft. Databases such as CockroachDB, Spanner and MongoDB run consensus inside every shard or replica set to decide failover."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "When the Replication lesson said “promote the most up-to-date follower”, this is the machinery that makes it safe."
+      },
+      "changes": [
+        "+ Three systems that depend on the cluster"
+      ],
+      "metrics": {
+        "leaders": 1,
+        "term": 3,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "cz": {
+            "type": "zone",
+            "x0": -13.5,
+            "x1": 13.5,
+            "y0": -8.5,
+            "y1": 10.5,
+            "label": "CONSENSUS CLUSTER · etcd"
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "leader · term 3",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          },
+          "k8s": {
+            "type": "block",
+            "x": -11,
+            "y": -18,
+            "color": "purple",
+            "glyph": "box",
+            "label": [
+              "Kubernetes"
+            ],
+            "sub": "cluster state"
+          },
+          "dbf": {
+            "type": "block",
+            "x": 0,
+            "y": -18,
+            "color": "orange",
+            "glyph": "database",
+            "label": [
+              "Database"
+            ],
+            "sub": "who is primary?"
+          },
+          "job": {
+            "type": "block",
+            "x": 11,
+            "y": -18,
+            "color": "green",
+            "glyph": "clock",
+            "label": [
+              "Scheduler"
+            ],
+            "sub": "one runner lock"
+          }
+        },
+        "links": {
+          "ca": {
+            "from": "c",
+            "to": "a",
+            "pts": [
+              "c",
+              [
+                "c",
+                "a"
+              ],
+              "a"
+            ],
+            "heads": "end"
+          },
+          "cb": {
+            "from": "c",
+            "to": "b",
+            "pts": [
+              "c",
+              "b"
+            ],
+            "heads": "end"
+          },
+          "u1": {
+            "from": "k8s",
+            "to": "b",
+            "pts": [
+              "k8s",
+              "b-1"
+            ],
+            "heads": "both"
+          },
+          "u2": {
+            "from": "dbf",
+            "to": "a",
+            "pts": [
+              "dbf",
+              "a"
+            ],
+            "heads": "both"
+          },
+          "u3": {
+            "from": "job",
+            "to": "c",
+            "pts": [
+              "job",
+              "c+1"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "u1"
+                ]
+              },
+              {
+                "path": [
+                  "u2"
+                ]
+              },
+              {
+                "path": [
+                  "u3"
+                ]
+              }
+            ],
+            "rate": 1.6,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ca"
+                ]
+              },
+              {
+                "path": [
+                  "cb"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Recap",
+      "chapter": "recap",
+      "title": "Recap",
+      "body": [
+        "<ul class=\"takeaways\">\n          <li>A timeout can’t tell <b>dead</b> from <b>unreachable</b> — naive failover risks split brain.</li>\n          <li><b>Majority rule</b>: elections and writes need more than half the nodes, and two majorities always overlap.</li>\n          <li><b>Terms</b> order the leaders: a higher term wins and a stale leader steps down.</li>\n          <li>A write is <b>committed</b> once a majority has logged it — never before.</li>\n          <li>Run <b>3 or 5</b> nodes across zones, and use <b>fencing tokens</b> for anything outside the log.</li>\n        </ul>"
+      ],
+      "callout": {
+        "kind": "next",
+        "text": "Next up: <b>Transactions & Isolation</b> — keeping one database correct when many requests change it at once."
+      },
+      "metrics": {
+        "leaders": 1,
+        "term": 3,
+        "writes": "ok",
+        "canLose": "1 of 3"
+      },
+      "scene": {
+        "entities": {
+          "app1": {
+            "type": "block",
+            "x": 0,
+            "y": -17,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App",
+              "Server 1"
+            ]
+          },
+          "a": {
+            "type": "db",
+            "x": 0,
+            "y": -5,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node A",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "b": {
+            "type": "db",
+            "x": -10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node B",
+            "tags": [
+              {
+                "text": "follower",
+                "icon": "check"
+              }
+            ]
+          },
+          "c": {
+            "type": "db",
+            "x": 10,
+            "y": 7,
+            "r": 1.9,
+            "glyph": "database",
+            "label": "node C",
+            "tags": [
+              {
+                "text": "leader · term 3",
+                "tone": "green",
+                "icon": "flag"
+              }
+            ]
+          }
+        },
+        "links": {
+          "w1c": {
+            "from": "app1",
+            "to": "c",
+            "pts": [
+              "app1",
+              [
+                "c+1",
+                "app1"
+              ],
+              "c+1"
+            ],
+            "heads": "both"
+          },
+          "ca": {
+            "from": "c",
+            "to": "a",
+            "pts": [
+              "c",
+              [
+                "c",
+                "a"
+              ],
+              "a"
+            ],
+            "heads": "end"
+          },
+          "cb": {
+            "from": "c",
+            "to": "b",
+            "pts": [
+              "c",
+              "b"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "w1c"
+            ],
+            "kind": "write",
+            "rate": 0.7,
+            "bounce": true
+          },
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "ca"
+                ]
+              },
+              {
+                "path": [
+                  "cb"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.7
+          }
+        ]
+      }
+    }
+  ]
+}

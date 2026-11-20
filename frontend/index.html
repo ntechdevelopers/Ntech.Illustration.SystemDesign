@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>System Design — an interactive course</title>
+    <meta name="description" content="An interactive system design course: each idea is an animated diagram you step through — load balancing, caching, sharding, consensus, queues and whole-system designs." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#f4ebe0" />
+    <script>
+      try {
+        if (JSON.parse(localStorage.getItem('sdt:theme')) === 'dark' || (!localStorage.getItem('sdt:theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      } catch (e) {}
+
+      var w = window.innerWidth, h = window.innerHeight;
+      document.documentElement.dataset.layout = w >= 1200 && h >= 560 ? 'desktop' : w >= 960 && h >= 600 ? 'tablet' : 'stack';
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

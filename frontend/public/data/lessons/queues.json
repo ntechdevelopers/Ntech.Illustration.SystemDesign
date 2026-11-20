@@ -1,0 +1,2573 @@
+{
+  "id": "queues",
+  "title": "Message Queues",
+  "summary": "Answer right away, do the slow work later — and never lose a job along the way.",
+  "minutes": 12,
+  "level": "beginner",
+  "metrics": [
+    "respond",
+    "backlog",
+    "workers",
+    "lost"
+  ],
+  "legend": [
+    "req",
+    "res",
+    "msg",
+    "slow",
+    "poison",
+    "fail"
+  ],
+  "goals": [
+    {
+      "text": "Why slow work doesn’t belong in a request",
+      "step": 0
+    },
+    {
+      "text": "Producers, queues and consumers",
+      "step": 1
+    },
+    {
+      "text": "Absorbing spikes as backlog",
+      "step": 2
+    },
+    {
+      "text": "Acks, retries and dead-letter queues",
+      "step": 5
+    },
+    {
+      "text": "Ordering, partitions and backpressure",
+      "step": 8
+    }
+  ],
+  "steps": [
+    {
+      "short": "Slow upload",
+      "chapter": "problem",
+      "title": "Slow work inside the request",
+      "body": [
+        "Creators upload videos, and each one must be transcoded into several sizes — about 30 seconds of heavy work. Right now the web server does it <em>inside</em> the upload request.",
+        "So the creator stares at a spinner for 30 s, many requests time out, and while servers grind through videos, every other page on the site slows down too."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "Anything slow, heavy or unreliable inside a request — video, email, reports, third-party calls — makes users wait for it."
+      },
+      "metrics": {
+        "respond": 30000,
+        "backlog": "—",
+        "workers": 0,
+        "lost": "25%"
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 11,
+            "label": "creators uploading"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ],
+            "heat": 1,
+            "cpu": 0.96,
+            "tags": [
+              {
+                "text": "transcoding · 30 s",
+                "tone": "red",
+                "icon": "video"
+              }
+            ]
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both",
+            "label": "upload … wait 30 s",
+            "labelTone": "amber",
+            "fail": 0.25
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "kind": "slow",
+            "rate": 1.8,
+            "bounce": true,
+            "speed": 0.4
+          }
+        ]
+      }
+    },
+    {
+      "short": "Add a queue",
+      "chapter": "solution",
+      "title": "Put a queue in between",
+      "body": [
+        "The web server now just stores the upload, puts a small <b>job</b> message on a <span class=\"term\">message queue</span>, and replies at once: “processing — we’ll notify you”.",
+        "Separate <span class=\"term\">worker</span> machines pull jobs off the queue and transcode at their own pace. The web server is the <b>producer</b>; workers are <b>consumers</b>."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Popular queues: RabbitMQ, Amazon SQS, Google Pub/Sub, and Kafka (a log that also works as a queue)."
+      },
+      "changes": [
+        "+ Queue",
+        "+ 2 workers",
+        "~ Upload response 30 s → 80 ms"
+      ],
+      "metrics": {
+        "respond": 80,
+        "backlog": 2,
+        "workers": 2,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 11,
+            "label": "creators uploading"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ],
+            "tags": [
+              {
+                "text": "202 Accepted · 80 ms",
+                "tone": "green",
+                "icon": "check"
+              }
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · VIDEO JOBS"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 2,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w1": {
+            "type": "block",
+            "x": -4,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w2": {
+            "type": "block",
+            "x": 4,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 3,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 1.4
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              }
+            ],
+            "rate": 1.4,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Spike",
+      "chapter": "insight",
+      "title": "A spike becomes a backlog",
+      "body": [
+        "A big creator goes live and uploads jump tenfold. Without the queue, that spike would have flattened the web servers.",
+        "Now the web tier stays fast — it only enqueues — and jobs simply wait their turn. Workers keep a steady pace and catch up after the rush."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "A queue turns “too much work right now” into “a bit more waiting later”. This is called load levelling."
+      },
+      "changes": [
+        "~ Uploads ×10",
+        "+ Backlog builds: 1,200 jobs",
+        "~ Upload response stays ~85 ms"
+      ],
+      "metrics": {
+        "respond": 85,
+        "backlog": 1200,
+        "workers": 2,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 15,
+            "label": "creators · ×10"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ],
+            "tags": [
+              {
+                "text": "202 Accepted · 85 ms",
+                "tone": "green",
+                "icon": "check"
+              }
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · 1,200 JOBS WAITING"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 11,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w1": {
+            "type": "block",
+            "x": -4,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "steady pace",
+                "icon": "gauge"
+              }
+            ]
+          },
+          "w2": {
+            "type": "block",
+            "x": 4,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "steady pace",
+                "icon": "gauge"
+              }
+            ]
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 6,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 4
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              }
+            ],
+            "rate": 1.4,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "More workers",
+      "chapter": "technique",
+      "title": "Add workers to drain it",
+      "body": [
+        "Need to catch up faster? Start more workers. They all pull from the same queue, and each job goes to exactly <b>one</b> of them — the <span class=\"term\">competing consumers</span> pattern.",
+        "Workers are stateless, so adding them is easy, and many teams scale them automatically on queue length."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Producers and consumers now scale independently: add web servers for traffic, workers for processing."
+      },
+      "changes": [
+        "+ 3 more workers",
+        "~ Backlog 1,200 → 300 and falling"
+      ],
+      "metrics": {
+        "respond": 80,
+        "backlog": 300,
+        "workers": 5,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 15,
+            "label": "creators · ×10"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · DRAINING"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 4,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w3": {
+            "type": "block",
+            "x": 0,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw3": {
+            "from": "mq",
+            "to": "w3",
+            "pts": [
+              "mq",
+              [
+                "w3",
+                "mq"
+              ],
+              "w3"
+            ],
+            "heads": "end"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 6,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 4
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw3"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 4.4,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Crash",
+      "chapter": "problem",
+      "title": "A worker dies mid-job",
+      "body": [
+        "A worker crashes halfway through transcoding. If the queue deleted each job the moment it handed it out, that video is simply gone — the creator waits forever.",
+        "Machines crash, get restarted and are replaced all the time. The queue has to assume it."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "Handing out a job is not the same as finishing it."
+      },
+      "changes": [
+        "− Worker crashed",
+        "− Its in-progress jobs lost"
+      ],
+      "metrics": {
+        "respond": 80,
+        "backlog": 300,
+        "workers": 4,
+        "lost": 12
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 15,
+            "label": "creators · ×10"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · DRAINING"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 4,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w3": {
+            "type": "block",
+            "x": 0,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 1,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "DOWN",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw3": {
+            "from": "mq",
+            "to": "w3",
+            "pts": [
+              "mq",
+              [
+                "w3",
+                "mq"
+              ],
+              "w3"
+            ],
+            "heads": "end",
+            "fail": 1
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 6,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 4
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw3"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 4.4,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Acks",
+      "chapter": "solution",
+      "title": "Acknowledge when done",
+      "body": [
+        "Fix: a job is only <em>hidden</em> while a worker has it. When the worker finishes, it sends an <span class=\"term\">acknowledgement</span> and the job is deleted. No ack within a timeout? The job reappears and another worker picks it up.",
+        "The catch: a job can now run <b>twice</b> (say, a worker finishes but dies before acking). So jobs must be <span class=\"term\">idempotent</span> — safe to repeat."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "This is “at-least-once” delivery, the norm for queues. Exactly-once is very hard; idempotent consumers get you the same result."
+      },
+      "changes": [
+        "+ Ack after each job",
+        "+ Unacked jobs redelivered after 60 s",
+        "~ Lost jobs 12 → 0"
+      ],
+      "metrics": {
+        "respond": 80,
+        "backlog": 320,
+        "workers": 4,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 15,
+            "label": "creators · ×10"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · DRAINING"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 4,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w3": {
+            "type": "block",
+            "x": 0,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 1,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "DOWN",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "card": {
+            "type": "panel",
+            "x": 6.5,
+            "y": 2.5,
+            "z": 0,
+            "dx": 80,
+            "dy": -240,
+            "title": "Acknowledgements",
+            "lines": [
+              "1. worker takes a job → hidden, not deleted",
+              "2. worker finishes → ack → deleted",
+              "3. no ack in 60 s → visible again",
+              "! may run twice → make jobs idempotent"
+            ],
+            "icon": "check"
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw3": {
+            "from": "mq",
+            "to": "w3",
+            "pts": [
+              "mq",
+              [
+                "w3",
+                "mq"
+              ],
+              "w3"
+            ],
+            "heads": "end",
+            "style": "off"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 6,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 4
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 4,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Poison",
+      "chapter": "technique",
+      "title": "Poison messages and the dead-letter queue",
+      "body": [
+        "One upload is a corrupt file. Every worker that tries it crashes or fails, the job is redelivered, and it fails again — forever, wasting workers and blocking others.",
+        "So queues count attempts. After, say, 3 failures the message is moved to a <span class=\"term\">dead-letter queue</span> (DLQ) for a human or a script to inspect."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Alert on DLQ size. A growing dead-letter queue is often the first sign of a bug."
+      },
+      "changes": [
+        "− Crashed worker removed",
+        "+ Dead-letter queue",
+        "~ Failing jobs moved aside after 3 attempts"
+      ],
+      "metrics": {
+        "respond": 80,
+        "backlog": 60,
+        "workers": 4,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 11,
+            "label": "creators uploading"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · VIDEO JOBS"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 2,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "dlq": {
+            "type": "db",
+            "x": -15,
+            "y": 0.5,
+            "r": 1.6,
+            "h": 32,
+            "glyph": "skull",
+            "label": "dead letters"
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          },
+          "dl": {
+            "from": "mq",
+            "to": "dlq",
+            "pts": [
+              "mq",
+              "dlq"
+            ],
+            "heads": "end",
+            "style": "dashed",
+            "label": "after 3 failures",
+            "labelAt": 0.35
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 3,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 1.6
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 1.6,
+            "kind": "msg",
+            "speed": 0.6
+          },
+          {
+            "route": [
+              "dl"
+            ],
+            "kind": "poison",
+            "rate": 0.35,
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Order",
+      "chapter": "problem",
+      "title": "Case: messages out of order",
+      "body": [
+        "A different queue carries account events: <code>created</code>, <code>email changed</code>, <code>deleted</code>. With several workers pulling in parallel, a slow worker can finish “email changed” <em>after</em> another worker has already processed “deleted”.",
+        "Many queues give no ordering guarantee at all — and even ordered ones lose it once several consumers work in parallel."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "If correctness depends on order, you must design for it explicitly."
+      },
+      "changes": [
+        "+ Account events: created → changed → deleted",
+        "− Processed as created → deleted → changed"
+      ],
+      "metrics": {
+        "respond": 80,
+        "backlog": 60,
+        "workers": 4,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 11,
+            "label": "creators uploading"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · ACCOUNT EVENTS"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 3,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "“deleted” ✓",
+                "tone": "green"
+              }
+            ]
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0.3,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "“email changed” · late",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 3,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 1.6
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 1.6,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Partitions",
+      "chapter": "solution",
+      "title": "Order per key with partitions",
+      "body": [
+        "Systems like Kafka split a topic into <span class=\"term\">partitions</span>. Messages with the same key (say, the account id) always go to the same partition, and each partition is read by one worker, in order.",
+        "So events for one account stay in order, while different accounts are still processed in parallel across partitions."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Order is guaranteed per key, not globally. Global order means one consumer — and no parallelism."
+      },
+      "changes": [
+        "+ 4 partitions, keyed by account id",
+        "~ Each worker owns one partition",
+        "~ Events per account stay in order"
+      ],
+      "metrics": {
+        "respond": 80,
+        "backlog": 60,
+        "workers": 4,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 11,
+            "label": "creators uploading"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "TOPIC · 4 PARTITIONS BY ACCOUNT"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 3,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "partition 0"
+              }
+            ]
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "partition 1"
+              }
+            ]
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "partition 2"
+              }
+            ]
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1,
+            "tags": [
+              {
+                "text": "partition 3"
+              }
+            ]
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 3,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 1.6
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 1.6,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Backpressure",
+      "chapter": "technique",
+      "title": "When the backlog never drains",
+      "body": [
+        "Queues absorb spikes — but if jobs arrive faster than workers finish them <em>for hours</em>, the backlog grows forever. Jobs get older and older, and eventually storage runs out.",
+        "Watch queue <b>age</b>, not just length, and push back: autoscale workers, cap the queue, and tell producers to slow down (or reject new jobs with a clear “try later”)."
+      ],
+      "callout": {
+        "kind": "insight",
+        "text": "A queue buys time, not capacity. Long-term, throughput must match the arrival rate."
+      },
+      "changes": [
+        "+ Alert: oldest job > 10 min",
+        "+ Queue capped · producers told to retry later"
+      ],
+      "metrics": {
+        "respond": 120,
+        "backlog": 50000,
+        "workers": 4,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 15,
+            "label": "all-day surge"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ],
+            "tags": [
+              {
+                "text": "503 · try again in 60 s",
+                "tone": "amber",
+                "icon": "clock"
+              }
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · 50,000 JOBS · OLDEST 25 MIN"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 12,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 1,
+            "dead": 0,
+            "cpu": 1
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 1,
+            "dead": 0,
+            "cpu": 1
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 1,
+            "dead": 0,
+            "cpu": 1
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 1,
+            "dead": 0,
+            "cpu": 1
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both",
+            "fail": 0.25
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 6,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 4
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 1.6,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "short": "Recap",
+      "chapter": "recap",
+      "title": "Recap",
+      "body": [
+        "<ul class=\"takeaways\">\n          <li>Move slow work out of the request: <b>enqueue</b> a job and answer immediately.</li>\n          <li>Queues <b>absorb spikes</b>; add <b>workers</b> to drain the backlog.</li>\n          <li><b>Ack</b> after finishing; unacked jobs are retried — keep jobs <b>idempotent</b>.</li>\n          <li>Park repeat failures in a <b>dead-letter queue</b>.</li>\n          <li>Keep order <b>per key</b> with partitions; watch <b>queue age</b> and push back.</li>\n        </ul>"
+      ],
+      "callout": {
+        "kind": "next",
+        "text": "Next up: <b>Pub/Sub & Events</b> — when one thing happening should trigger many others."
+      },
+      "metrics": {
+        "respond": 80,
+        "backlog": 60,
+        "workers": 4,
+        "lost": 0
+      },
+      "scene": {
+        "entities": {
+          "users": {
+            "type": "crowd",
+            "x0": -4.5,
+            "x1": 4.5,
+            "y0": -21,
+            "y1": -15,
+            "count": 11,
+            "label": "creators uploading"
+          },
+          "web": {
+            "type": "block",
+            "x": 0,
+            "y": -9,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "Web",
+              "Server"
+            ]
+          },
+          "mq": {
+            "type": "zone",
+            "x0": -6.5,
+            "x1": 6.5,
+            "y0": -1.5,
+            "y1": 2.5,
+            "label": "QUEUE · VIDEO JOBS"
+          },
+          "q": {
+            "type": "queue",
+            "x": 5.6,
+            "y": 1,
+            "n": 2,
+            "dir": [
+              -1,
+              0
+            ]
+          },
+          "w4": {
+            "type": "block",
+            "x": -12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w1": {
+            "type": "block",
+            "x": -6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w2": {
+            "type": "block",
+            "x": 6,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "w5": {
+            "type": "block",
+            "x": 12,
+            "y": 9,
+            "color": "green",
+            "glyph": "video",
+            "label": [
+              "Worker"
+            ],
+            "heat": 0,
+            "dead": 0,
+            "cpu": -1
+          },
+          "dlq": {
+            "type": "db",
+            "x": -15,
+            "y": 0.5,
+            "r": 1.6,
+            "h": 32,
+            "glyph": "skull",
+            "label": "dead letters"
+          }
+        },
+        "links": {
+          "uw": {
+            "from": "users",
+            "to": "web",
+            "pts": [
+              "users",
+              "web"
+            ],
+            "heads": "both"
+          },
+          "wq": {
+            "from": "web",
+            "to": "mq",
+            "pts": [
+              "web",
+              "mq"
+            ],
+            "heads": "end",
+            "label": "enqueue job"
+          },
+          "qw4": {
+            "from": "mq",
+            "to": "w4",
+            "pts": [
+              "mq",
+              [
+                "w4",
+                "mq"
+              ],
+              "w4"
+            ],
+            "heads": "end",
+            "label": "pull"
+          },
+          "qw1": {
+            "from": "mq",
+            "to": "w1",
+            "pts": [
+              "mq",
+              [
+                "w1",
+                "mq"
+              ],
+              "w1"
+            ],
+            "heads": "end"
+          },
+          "qw2": {
+            "from": "mq",
+            "to": "w2",
+            "pts": [
+              "mq",
+              [
+                "w2",
+                "mq"
+              ],
+              "w2"
+            ],
+            "heads": "end"
+          },
+          "qw5": {
+            "from": "mq",
+            "to": "w5",
+            "pts": [
+              "mq",
+              [
+                "w5",
+                "mq"
+              ],
+              "w5"
+            ],
+            "heads": "end"
+          },
+          "dl": {
+            "from": "mq",
+            "to": "dlq",
+            "pts": [
+              "mq",
+              "dlq"
+            ],
+            "heads": "end",
+            "style": "dashed"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "uw"
+            ],
+            "rate": 3,
+            "bounce": true
+          },
+          {
+            "route": [
+              "wq"
+            ],
+            "kind": "msg",
+            "rate": 1.6
+          },
+          {
+            "routes": [
+              {
+                "path": [
+                  "qw4"
+                ]
+              },
+              {
+                "path": [
+                  "qw1"
+                ]
+              },
+              {
+                "path": [
+                  "qw2"
+                ]
+              },
+              {
+                "path": [
+                  "qw5"
+                ]
+              }
+            ],
+            "rate": 1.6,
+            "kind": "msg",
+            "speed": 0.6
+          }
+        ]
+      }
+    }
+  ]
+}

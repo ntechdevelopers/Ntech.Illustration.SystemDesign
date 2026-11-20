@@ -1,0 +1,1851 @@
+{
+  "id": "sharding",
+  "title": "Sharding",
+  "summary": "When the data or the writes outgrow one machine, split them across many.",
+  "minutes": 11,
+  "level": "intermediate",
+  "metrics": [
+    "shards",
+    "perShard",
+    "hottest",
+    "size"
+  ],
+  "legend": [
+    [
+      "write",
+      "write"
+    ],
+    "req",
+    "res"
+  ],
+  "goals": [
+    {
+      "text": "Why replicas don’t help with writes",
+      "step": 0
+    },
+    {
+      "text": "Shard keys: ranges vs hashes",
+      "step": 3
+    },
+    {
+      "text": "Hot keys: the celebrity problem",
+      "step": 4
+    },
+    {
+      "text": "The cost of cross-shard queries",
+      "step": 6
+    },
+    {
+      "text": "Why adding a shard is painful",
+      "step": 7
+    }
+  ],
+  "steps": [
+    {
+      "short": "Too big",
+      "chapter": "problem",
+      "title": "Too big for one machine",
+      "body": [
+        "The users database has grown to 20 TB and takes 40,000 writes a second. Followers would help with reads — but every <b>write</b> still has to go through one leader, and all the data has to fit on its disks.",
+        "You’re already on the biggest machine, and every backup, restore or new replica now takes the best part of a day to copy."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "Replication copies all the data everywhere. To scale writes and storage, the data itself has to be split."
+      },
+      "metrics": {
+        "shards": 1,
+        "perShard": 40000,
+        "hottest": 100,
+        "size": "20 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": []
+          },
+          "sa": {
+            "type": "db",
+            "x": 0,
+            "y": 0,
+            "r": 2.8,
+            "h": 66,
+            "heat": 0.85,
+            "cpu": 0.98,
+            "tags": [
+              {
+                "text": "20 TB · 40,000 writes/s",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              "sa"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "route": [
+              "wsa"
+            ],
+            "rate": 6,
+            "kind": "write"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Split by range",
+      "chapter": "solution",
+      "title": "Split the data: sharding",
+      "body": [
+        "<span class=\"term\">Sharding</span> splits one big database into several smaller ones — <b>shards</b> — each holding part of the data and taking part of the writes.",
+        "A <span class=\"term\">shard key</span> decides where each row lives. Here: by user id range. The app (or a router) looks up the range and sends each query to the right shard."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Each shard is usually replicated too: shards scale writes, followers within a shard scale reads and survive failures."
+      },
+      "changes": [
+        "+ 4 shards",
+        "~ Shard key: user_id ranges",
+        "~ 40,000 → 10,000 writes/s per shard"
+      ],
+      "metrics": {
+        "shards": 4,
+        "perShard": 10000,
+        "hottest": 25,
+        "size": "5 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "route by user_id",
+                "icon": "network"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "A · ids 1–25M"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "B · ids 25–50M"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "C · ids 50–75M"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "D · ids 75M+"
+              }
+            ]
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "wsa"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsb"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsc"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsd"
+                ],
+                "weight": 1
+              }
+            ],
+            "pick": "weights",
+            "rate": 4.4,
+            "kind": "write"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Hot spot",
+      "chapter": "problem",
+      "title": "Ranges create hot spots",
+      "body": [
+        "User ids grow over time, so every new signup lands in the last range. New users are also the most active — and shard D ends up with most of the writes while A sits nearly idle.",
+        "The same happens with dates or alphabetical names: data that arrives in order piles onto one shard.",
+        "Range-partitioned databases (Bigtable, HBase, CockroachDB) soften this by splitting a busy range in two automatically — but writes that always land at the “end” simply follow the last range."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "A shard key must spread both the data and the traffic."
+      },
+      "changes": [
+        "~ Shard D: 78% of writes",
+        "~ Shard A: 7%"
+      ],
+      "metrics": {
+        "shards": 4,
+        "perShard": "uneven",
+        "hottest": 78,
+        "size": "5 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "route by user_id",
+                "icon": "network"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.12,
+            "tags": [
+              {
+                "text": "A · ids 1–25M"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.14,
+            "tags": [
+              {
+                "text": "B · ids 25–50M"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.2,
+            "tags": [
+              {
+                "text": "C · ids 50–75M"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0.85,
+            "dead": 0,
+            "cpu": 0.97,
+            "tags": [
+              {
+                "text": "D · ids 75M+ · all new users",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "wsa"
+                ],
+                "weight": 0.07
+              },
+              {
+                "path": [
+                  "wsb"
+                ],
+                "weight": 0.07
+              },
+              {
+                "path": [
+                  "wsc"
+                ],
+                "weight": 0.08
+              },
+              {
+                "path": [
+                  "wsd"
+                ],
+                "weight": 0.78
+              }
+            ],
+            "pick": "weights",
+            "rate": 5,
+            "kind": "write"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Hash it",
+      "chapter": "solution",
+      "title": "Hash the key",
+      "body": [
+        "Instead of ranges, run the key through a hash function and take the remainder: <code>shard = hash(user_id) % 4</code>.",
+        "Consecutive ids scatter to unrelated shards, so new users — and their traffic — spread evenly."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Hashing loses range queries (“all users with ids 1–1000” now touches every shard). Usually a fine trade."
+      },
+      "changes": [
+        "~ Shard key: hash(user_id) % 4",
+        "~ Busiest shard 78% → 25%"
+      ],
+      "metrics": {
+        "shards": 4,
+        "perShard": 10000,
+        "hottest": 25,
+        "size": "5 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "hash(user_id) % 4",
+                "icon": "network"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "A · hash % 4 = 0",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "B · hash % 4 = 1",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "C · hash % 4 = 2",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "D · hash % 4 = 3",
+                "tone": "violet"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": 10.5,
+            "y": 0,
+            "z": 0,
+            "dx": 50,
+            "dy": -240,
+            "title": "Where does each user go?",
+            "lines": [
+              "user 1001 → hash % 4 = 2 → C",
+              "user 1002 → hash % 4 = 0 → A",
+              "user 1003 → hash % 4 = 3 → D",
+              "= neighbours scatter evenly"
+            ],
+            "icon": "network"
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "wsa"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsb"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsc"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsd"
+                ],
+                "weight": 1
+              }
+            ],
+            "pick": "weights",
+            "rate": 4.4,
+            "kind": "write"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Celebrity",
+      "chapter": "problem",
+      "title": "Case: the celebrity",
+      "body": [
+        "Hashing spreads <em>keys</em> evenly, not traffic. A pop star with 50 million followers lives on shard C like anyone else — and every view of their profile, every like on their posts, lands there too.",
+        "Shard C is melting while A, B and D are fine. This is a <span class=\"term\">hot key</span>, sometimes called the celebrity problem."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "No shard key fixes a single key that is more popular than one machine can handle."
+      },
+      "changes": [
+        "+ One very popular user on shard C",
+        "~ Shard C: 70% of traffic"
+      ],
+      "metrics": {
+        "shards": 4,
+        "perShard": "uneven",
+        "hottest": 70,
+        "size": "5 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "hash(user_id) % 4",
+                "icon": "network"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.2,
+            "tags": [
+              {
+                "text": "A · hash % 4 = 0",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.2,
+            "tags": [
+              {
+                "text": "B · hash % 4 = 1",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0.9,
+            "dead": 0,
+            "cpu": 0.98,
+            "tags": [
+              {
+                "text": "user 42 · pop star · 70%",
+                "tone": "red",
+                "icon": "alert"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.2,
+            "tags": [
+              {
+                "text": "D · hash % 4 = 3",
+                "tone": "violet"
+              }
+            ]
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "wsa"
+                ],
+                "weight": 0.1
+              },
+              {
+                "path": [
+                  "wsb"
+                ],
+                "weight": 0.1
+              },
+              {
+                "path": [
+                  "wsc"
+                ],
+                "weight": 0.7
+              },
+              {
+                "path": [
+                  "wsd"
+                ],
+                "weight": 0.1
+              }
+            ],
+            "pick": "weights",
+            "rate": 5,
+            "kind": "write"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Split key",
+      "chapter": "solution",
+      "title": "Cache it, or split it",
+      "body": [
+        "For a key that is <b>read</b> hot, put it in a cache (or many cache replicas) in front of the shard — most profile views never reach it.",
+        "For a key that is <b>write</b> hot, like the pop star’s like counter, split it: write to <code>likes:42#0</code> … <code>likes:42#7</code> at random, spread across shards, and add them up when reading."
+      ],
+      "callout": {
+        "kind": "tip",
+        "text": "Systems that face this daily (social networks, ticketing) treat their top keys specially — detected automatically, handled on purpose."
+      },
+      "changes": [
+        "+ Hot reads served from cache",
+        "+ likes:42 split into 8 sub-keys",
+        "~ Busiest shard 70% → 27%"
+      ],
+      "metrics": {
+        "shards": 4,
+        "perShard": 10000,
+        "hottest": 27,
+        "size": "5 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "likes:42 → #0…#7",
+                "icon": "split"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "A · likes:42#0,#1",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "B · likes:42#2,#3",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "C · likes:42#4,#5",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "D · likes:42#6,#7",
+                "tone": "violet"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": 10.5,
+            "y": 0,
+            "z": 0,
+            "dx": 50,
+            "dy": -240,
+            "title": "Split a hot counter",
+            "lines": [
+              "write: likes:42#rand(0..7) += 1",
+              "read:  sum of likes:42#0 … #7",
+              "= 8 sub-keys spread over 4 shards"
+            ],
+            "icon": "split"
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "wsa"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsb"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsc"
+                ],
+                "weight": 1.1
+              },
+              {
+                "path": [
+                  "wsd"
+                ],
+                "weight": 1
+              }
+            ],
+            "pick": "weights",
+            "rate": 5,
+            "kind": "write"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Cross-shard",
+      "chapter": "tradeoff",
+      "title": "Queries that span every shard",
+      "body": [
+        "Looking up one user is fast: hash the id, ask one shard. But “top 10 users by followers” isn’t keyed by user — the app must ask <b>every</b> shard and merge the answers.",
+        "These <span class=\"term\">scatter–gather</span> queries are as slow as the slowest shard, and joins across shards are hard."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "Pick a shard key that matches your most important queries — ideally they only ever touch one shard."
+      },
+      "changes": [
+        "+ One query → all 4 shards",
+        "~ Answer waits for the slowest"
+      ],
+      "metrics": {
+        "shards": 4,
+        "perShard": 10000,
+        "hottest": 25,
+        "size": "5 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "top 10 by followers?",
+                "icon": "search"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "A · hash % 4 = 0",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "B · hash % 4 = 1",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "C · hash % 4 = 2",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "D · hash % 4 = 3",
+                "tone": "violet"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": 10.5,
+            "y": 0,
+            "z": 0,
+            "dx": 50,
+            "dy": -240,
+            "title": "Scatter–gather",
+            "lines": [
+              "ask all 4 shards for their top 10",
+              "merge 40 results, keep the top 10",
+              "! as slow as the slowest shard"
+            ],
+            "icon": "layers"
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "wsa"
+                ]
+              },
+              {
+                "path": [
+                  "wsb"
+                ]
+              },
+              {
+                "path": [
+                  "wsc"
+                ]
+              },
+              {
+                "path": [
+                  "wsd"
+                ]
+              }
+            ],
+            "rate": 0.7,
+            "bounce": true
+          }
+        ]
+      }
+    },
+    {
+      "short": "Add a shard",
+      "chapter": "problem",
+      "title": "Adding a shard moves almost everything",
+      "body": [
+        "Shards fill up, so you add a fifth. But <code>hash % 4</code> becomes <code>hash % 5</code> — and for about <b>80%</b> of users the remainder changes.",
+        "Terabytes have to move between shards while the system keeps serving traffic."
+      ],
+      "callout": {
+        "kind": "warn",
+        "text": "With hash % N, changing N reshuffles nearly every key. The next lesson fixes exactly this."
+      },
+      "changes": [
+        "+ Shard E",
+        "~ hash % 4 → hash % 5",
+        "− ~80% of rows must move"
+      ],
+      "metrics": {
+        "shards": 5,
+        "perShard": 8000,
+        "hottest": 20,
+        "size": "4 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "hash(user_id) % 5",
+                "icon": "network"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "A · moving",
+                "tone": "amber",
+                "icon": "replay"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "B · moving",
+                "tone": "amber",
+                "icon": "replay"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "C · moving",
+                "tone": "amber",
+                "icon": "replay"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "D · moving",
+                "tone": "amber",
+                "icon": "replay"
+              }
+            ]
+          },
+          "se": {
+            "type": "db",
+            "x": 17.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "E · new",
+                "tone": "green"
+              }
+            ]
+          },
+          "card": {
+            "type": "panel",
+            "x": 10.5,
+            "y": 0,
+            "z": 0,
+            "dx": 50,
+            "dy": -240,
+            "title": "% 4 → % 5",
+            "lines": [
+              "user 1001: % 4 = 2, % 5 = 1  → moves",
+              "user 1002: % 4 = 0, % 5 = 0  → stays",
+              "! ~80% of keys change shard"
+            ],
+            "icon": "replay"
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          },
+          "wse": {
+            "from": "app",
+            "to": "se",
+            "pts": [
+              "app",
+              [
+                "se",
+                "app"
+              ],
+              "se"
+            ],
+            "heads": "both"
+          },
+          "msa": {
+            "from": "sa",
+            "to": "se",
+            "pts": [
+              "sa",
+              [
+                "sa",
+                -3.2
+              ],
+              [
+                "se",
+                -3.2
+              ],
+              "se"
+            ],
+            "heads": "end",
+            "style": "dashed"
+          },
+          "msb": {
+            "from": "sb",
+            "to": "se",
+            "pts": [
+              "sb",
+              [
+                "sb",
+                -3.2
+              ],
+              [
+                "se",
+                -3.2
+              ],
+              "se"
+            ],
+            "heads": "end",
+            "style": "dashed"
+          },
+          "msc": {
+            "from": "sc",
+            "to": "se",
+            "pts": [
+              "sc",
+              [
+                "sc",
+                -3.2
+              ],
+              [
+                "se",
+                -3.2
+              ],
+              "se"
+            ],
+            "heads": "end",
+            "style": "dashed"
+          },
+          "msd": {
+            "from": "sd",
+            "to": "se",
+            "pts": [
+              "sd",
+              [
+                "sd",
+                -3.2
+              ],
+              [
+                "se",
+                -3.2
+              ],
+              "se"
+            ],
+            "heads": "end",
+            "style": "dashed"
+          }
+        },
+        "flows": [
+          {
+            "fanout": true,
+            "routes": [
+              {
+                "path": [
+                  "msa"
+                ]
+              },
+              {
+                "path": [
+                  "msb"
+                ]
+              },
+              {
+                "path": [
+                  "msc"
+                ]
+              },
+              {
+                "path": [
+                  "msd"
+                ]
+              }
+            ],
+            "kind": "write",
+            "rate": 0.9
+          }
+        ]
+      }
+    },
+    {
+      "short": "Recap",
+      "chapter": "recap",
+      "title": "Recap",
+      "body": [
+        "<ul class=\"takeaways\">\n          <li><b>Sharding</b> splits data and writes across machines.</li>\n          <li>The <b>shard key</b> decides where rows live — it must spread load evenly.</li>\n          <li><b>Ranges</b> make hot spots; <b>hashes</b> spread load but scatter range queries.</li>\n          <li>A single <b>hot key</b> needs caching or splitting.</li>\n          <li>Queries off the shard key hit <b>every shard</b>; resharding with % N moves most data.</li>\n        </ul>"
+      ],
+      "callout": {
+        "kind": "next",
+        "text": "Next up: <b>Consistent Hashing</b> — add or remove a shard and move only a fraction of the keys."
+      },
+      "metrics": {
+        "shards": 4,
+        "perShard": 10000,
+        "hottest": 25,
+        "size": "5 TB"
+      },
+      "scene": {
+        "entities": {
+          "app": {
+            "type": "block",
+            "x": 0,
+            "y": -12,
+            "color": "blue",
+            "glyph": "server",
+            "label": [
+              "App"
+            ],
+            "tags": [
+              {
+                "text": "hash(user_id) % 4",
+                "icon": "network"
+              }
+            ]
+          },
+          "sa": {
+            "type": "db",
+            "x": -10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "A · hash % 4 = 0",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sb": {
+            "type": "db",
+            "x": -3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "B · hash % 4 = 1",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sc": {
+            "type": "db",
+            "x": 3.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "C · hash % 4 = 2",
+                "tone": "violet"
+              }
+            ]
+          },
+          "sd": {
+            "type": "db",
+            "x": 10.5,
+            "y": 0,
+            "r": 1.6,
+            "h": 36,
+            "glyph": "database",
+            "heat": 0,
+            "dead": 0,
+            "cpu": 0.5,
+            "tags": [
+              {
+                "text": "D · hash % 4 = 3",
+                "tone": "violet"
+              }
+            ]
+          }
+        },
+        "links": {
+          "wsa": {
+            "from": "app",
+            "to": "sa",
+            "pts": [
+              "app",
+              [
+                "sa",
+                "app"
+              ],
+              "sa"
+            ],
+            "heads": "both"
+          },
+          "wsb": {
+            "from": "app",
+            "to": "sb",
+            "pts": [
+              "app",
+              [
+                "sb",
+                "app"
+              ],
+              "sb"
+            ],
+            "heads": "both"
+          },
+          "wsc": {
+            "from": "app",
+            "to": "sc",
+            "pts": [
+              "app",
+              [
+                "sc",
+                "app"
+              ],
+              "sc"
+            ],
+            "heads": "both"
+          },
+          "wsd": {
+            "from": "app",
+            "to": "sd",
+            "pts": [
+              "app",
+              [
+                "sd",
+                "app"
+              ],
+              "sd"
+            ],
+            "heads": "both"
+          }
+        },
+        "flows": [
+          {
+            "routes": [
+              {
+                "path": [
+                  "wsa"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsb"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsc"
+                ],
+                "weight": 1
+              },
+              {
+                "path": [
+                  "wsd"
+                ],
+                "weight": 1
+              }
+            ],
+            "pick": "weights",
+            "rate": 4.4,
+            "kind": "write"
+          }
+        ]
+      }
+    }
+  ]
+}
